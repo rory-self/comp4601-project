@@ -16,7 +16,12 @@ sense.
 
 - **Iteration 1 — COMPLETE (this folder).** We get our speedup by running **many
   copies of the coder in parallel** ("multi-stream replication"). Result:
-  **4.9× faster than the ARM CPU** on the same board.
+  **up to 4.9× faster than the ARM CPU** on the same board.
+- **Confirmed on real hardware.** The kernel was built into a bitstream and run on
+  the KV260's FPGA fabric (not just simulated). The K=8 design measured **13.29 M
+  symbols/s = 3.84× the ARM CPU**, matching the co-simulation prediction within
+  ~3% (§6). There is also a **live image-compression demo** — CPU vs FPGA on the
+  board — see `demo/` and §7.
 - **Iteration 2 — planned.** Make each *single* copy faster by pipelining it
   (harder; see §8). This would multiply on top of the replication.
 
@@ -158,8 +163,19 @@ FPGA overtakes the CPU.
 | **Software — ARM Cortex-A53 (measured on board)** | 3.46 M symbols/s | 1.0× (the baseline to beat) |
 | Software — x86 laptop reference (for context) | 23.9 M symbols/s | 6.9× |
 | Naive HLS — single stream | 0.29–2.4 M symbols/s | **0.08–0.69× (SLOWER!)** |
-| **Best HLS — 8-way replication (K=8)** | 12.9 M symbols/s | **3.7×** |
-| **Best HLS — 16-way replication (K=16)** | 16.8 M symbols/s | **4.9×** |
+| **Best HLS — K=8, MEASURED ON FPGA FABRIC** | **13.29 M symbols/s** | **3.84×** |
+| Best HLS — K=8, co-simulation (predicted) | 12.9 M symbols/s | 3.7× |
+| Best HLS — K=16, co-simulation | 16.8 M symbols/s | 4.9× |
+
+**On-fabric validation (the important confirmation):** the K=8 kernel was
+synthesised (closes timing at 200 MHz, 3.65 ns), linked into a bitstream, loaded
+onto the PL, and driven by an XRT host. Measured: **13.29 M symbols/s (3.84× the
+ARM), losslessly** — the host decoded the *board's* compressed output and it
+matched the input exactly. Crucially, the real-fabric number (13.29) and the
+co-sim number (12.9) **agree within ~3%**: because the kernel compresses a whole
+4 KB buffer per call, the XRT launch overhead amortises to near-zero per symbol.
+(Raw log: `board/onfabric_result.txt`.) K=16 was left as a co-sim result to keep
+the first fabric build low-risk; it scales the same way (~4.9×).
 
 How to read this:
 - The **naive** FPGA version is genuinely *slower* than the CPU — proof of the §3
@@ -205,6 +221,51 @@ configs are `naive_hls/hls_config.cfg` and `best_hls/hls_config5.cfg`; the scrip
 `best_hls/sweep.sh` and `sweep_big.sh` reproduce the K-sweeps via
 `vitis-run --mode hls --csim|--cosim` and `v++ -c --mode hls`.
 
+### Running the real kernel on the board (`board/`)
+
+The `board/` folder has the on-fabric kernel (K=8), an XRT host, and a **prebuilt
+bitstream** (`arith.bin`) so you can run without a 10-min Vivado build.
+
+```
+# on the board (after loading arith.bin via xmutil loadapp arith):
+./arith_host_arm -x arith.bin -N 4095 -n 2000
+```
+Cross-compiling the host yourself (aarch64, against the XRT sysroot):
+```
+aarch64-linux-gnu-g++ -O3 -std=c++17 --sysroot=<SYSROOT> \
+  -I<SYSROOT>/usr/include -I<SYSROOT>/usr/include/xrt \
+  host.cpp arith5.cpp -DKWAY=8 -o arith_host_arm \
+  -L<SYSROOT>/usr/lib -lxrt_coreutil -lpthread -lrt -ldl -luuid
+```
+Rebuilding the bitstream from source: `vitis-run --mode hls --package` with
+`hls_board.cfg` to get `arith_kernel.xo`, then `v++ --link --target hw` with
+`link.cfg` against the `kv260_custom` platform → `arith.xclbin`.
+
+### 🖼️  Live image-compression demo (`demo/`) — the visual demo
+
+Compresses a real image on **both** the ARM CPU and the FPGA, decompresses it,
+checks the reconstruction is pixel-perfect, and prints an ASCII preview + the
+speedup — all in the terminal, all on the board.
+
+```
+cd demo
+./run_demo.sh <BOARD_IP>        # deploys, loads the bitstream, runs, pulls the result back
+```
+(or, if already deployed, on the board: `./demo_arm -i image.pgm -x arith.bin`)
+
+Example output (256×256 image):
+```
+original size    : 65,536 bytes
+compressed size  : 42,661 bytes   (65.1% of original)
+lossless         : YES — reconstructed == original, pixel-perfect
+CPU vs FPGA out  : identical bytes
+ARM CPU compress : 21,908 us   (2.99 MB/s)
+FPGA    compress :  6,071 us   (10.79 MB/s)
+SPEEDUP          : 3.61x
+```
+`image.png` and `reconstructed.png` are the before/after (identical, since it's
+lossless). The demo also prints the image as ASCII art before and after.
+
 ---
 
 ## 8. Caveats & what iteration 2 will try
@@ -240,4 +301,15 @@ software/    sw_bench.cpp, arith5.cpp, arith3.h     CPU throughput benchmark (sa
 results/     sweep_results.csv (256-sym)            measured K-sweep, small input
              sweep_big_results.csv (1024-sym)       measured K-sweep, larger input (better scaling)
              arm_software_board.txt                 raw ARM Cortex-A53 measurement
+board/       arith_board.cpp                        board top-level kernel (K=8, adds out_len port)
+             host.cpp                               XRT throughput host (chrono around kernel only)
+             hls_board.cfg, link.cfg                HLS package + v++ link configs
+             arith.bin                              prebuilt bitstream (loadable with xmutil)
+             onfabric_result.txt                    raw on-fabric measurement (13.29 M sym/s)
+             arith5.cpp, arith3.h                   coder sources (for standalone build)
+demo/        demo_host.cpp                          image demo: CPU vs FPGA compress + reconstruct
+             run_demo.sh                            deploy + run the demo on the board
+             demo_arm                               prebuilt aarch64 demo binary
+             image.pgm/.png, reconstructed.png      the test image + its (identical) reconstruction
+             arith5.cpp, arith3.h                   coder sources (for standalone build)
 ```

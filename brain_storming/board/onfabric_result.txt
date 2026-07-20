@@ -1,0 +1,15 @@
+On-fabric arithmetic-coding kernel — KV260 PL @ 200 MHz, K=8 multi-stream
+(measured on real hardware, xrt host, chrono around kernel enqueue+wait only)
+
+  input 4095 symbols -> 1712 bytes (41.8%), decode(board_output) == input  [LOSSLESS]
+  308.19 us/call (median 308.27, min 303.9) over 2000 iterations
+  75.26 ns/symbol  =>  13.29 M symbols/s
+
+Comparison:
+  ARM Cortex-A53 software (measured on board) : 3.46 M sym/s   (1.0x)
+  FPGA K=8 co-simulation (predicted)          : 12.9 M sym/s
+  FPGA K=8 ON FABRIC (this, measured)         : 13.29 M sym/s  (3.84x ARM)
+
+Note: co-sim (12.9) and real fabric (13.29) agree within ~3% — unlike a
+per-sample kernel, this processes a whole 4095-symbol buffer per call, so the
+XRT launch overhead (~tens of us) amortises to near-zero per symbol.
