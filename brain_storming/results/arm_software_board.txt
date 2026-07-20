@@ -1,0 +1,5 @@
+ARM Cortex-A53 (KV260 PS, 1.334 GHz) — software arithmetic coder (binary coder, K=1)
+measured on-board, chrono around encode call, 20000 iterations:
+  n=4095 symbols, comp=1531 bytes (37.4%)
+  288.68 ns/symbol   =>   3.46 M symbols/s
+(x86 reference for the same code: 41.9 ns/sym, 23.9 M sym/s)
