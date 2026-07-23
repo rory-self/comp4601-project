@@ -1,24 +1,39 @@
-#include <cstring>
-#include <stdio.h>
-#include <stdlib.h>
+// Software throughput baseline: the same binary arithmetic coder as best_hls,
+// compiled for the CPU (build with -DKWAY=1). Times the encoder with std::chrono.
+#include <array>
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
+
 #include "arith3.h"
-static byte_t in[MAX_IN], out[MAX_OUT];
-int main(){
-    // ~4000-symbol text-like payload (skewed distribution => realistic model work)
-    
-    
-    int n=MAX_IN-1;
-    for(int i=0;i<n;i++){ in[i]=(byte_t)('a'+(i%7)); }  // same workload as HW cosim
-    int reps=20000, comp=0;
-    auto t0=std::chrono::high_resolution_clock::now();
-    for(int k=0;k<reps;k++) comp=arith_encode(in,n,out);
-    auto t1=std::chrono::high_resolution_clock::now();
-    double us=std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count()/1e3;
-    double us_per_call=us/reps;
-    double ns_per_sym=us_per_call*1e3/n;
-    printf("n=%d symbols, comp=%d bytes (%.1f%%)\n", n, comp, 100.0*comp/n);
-    printf("SW encode: %.2f us/message, %.2f ns/symbol, %.2f M symbols/s\n",
-           us_per_call, ns_per_sym, 1e3/ns_per_sym);
+
+int arith_encode(const byte_t* in, int n, byte_t* out);   // from arith5.cpp
+
+namespace {
+using Clock = std::chrono::high_resolution_clock;
+constexpr int kSymbols = MAX_IN - 1;
+constexpr int kReps    = 20000;
+}
+
+int main() {
+    // Compressible workload (matches the co-simulation / on-board input).
+    std::array<byte_t, MAX_IN>  input{};
+    std::array<byte_t, MAX_OUT> output{};
+    for (int i = 0; i < kSymbols; ++i)
+        input[i] = static_cast<byte_t>('a' + (i % 7));
+
+    int compressed = 0;
+    const auto t0 = Clock::now();
+    for (int k = 0; k < kReps; ++k)
+        compressed = arith_encode(input.data(), kSymbols, output.data());
+    const auto t1 = Clock::now();
+
+    const double us_per_call = std::chrono::duration<double, std::micro>(t1 - t0).count() / kReps;
+    const double ns_per_sym  = us_per_call * 1000.0 / kSymbols;
+
+    std::printf("n=%d symbols, comp=%d bytes (%.1f%%)\n",
+                kSymbols, compressed, 100.0 * compressed / kSymbols);
+    std::printf("SW encode: %.2f us/message, %.2f ns/symbol, %.2f M symbols/s\n",
+                us_per_call, ns_per_sym, 1000.0 / ns_per_sym);
     return 0;
 }

@@ -49,6 +49,8 @@ Why it compresses: a likely symbol barely shrinks the interval (cheap, few
 bits); an unlikely symbol shrinks it a lot (expensive, more bits). Over the whole
 message this reaches the theoretical minimum number of bits (the "entropy").
 
+reference: https://medium.com/@nit4642/arithmetic-coding-f2a7559c0dbd
+
 **"Adaptive"** means the model of symbol probabilities isn't fixed up front — it
 *learns* as it reads the data (e.g. after seeing lots of the letter 'e', it makes
 'e' 's slice bigger). This compresses real data better because it adapts to

@@ -7,8 +7,12 @@
 #include "arith.h"
 
 void arith_encode(const byte_t in[MAX_IN], int n, byte_t out[MAX_OUT], int *out_len) {
+#ifdef __SYNTHESIS__
 #pragma HLS INTERFACE m_axi port=in  offset=slave bundle=gmem0
+#endif
+#ifdef __SYNTHESIS__
 #pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1
+#endif
 
     // Adaptive frequency model (start uniform: every symbol freq 1).
     uint32_t freq[NSYM];

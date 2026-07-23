@@ -2,6 +2,13 @@
 #define ARITH3_H_
 #include <stdint.h>
 
+// NOTE: this is SYNTHESISABLE HLS code, so it deliberately uses a restricted
+// C++ subset (fixed-size arrays, no dynamic allocation / STL / exceptions):
+// Vitis HLS cannot synthesise those. HLS #pragmas are guarded by __SYNTHESIS__
+// so this same source compiles cleanly as plain C++ for the software builds.
+// The host/benchmark code (host.cpp, demo_host.cpp, sw_bench.cpp) is not
+// synthesised and uses modern C++20 (constexpr, std::span/array, RAII).
+
 // V3: adaptive BINARY range coder (LZMA-style bit model).
 // Shift-based interval update (no divide); byte alphabet via an 8-level bit-tree.
 #define MAX_IN    4096

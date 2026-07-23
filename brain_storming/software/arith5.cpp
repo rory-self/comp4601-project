@@ -37,16 +37,26 @@ static int encode_chunk(const byte_t *in, int n, byte_t *out) {
 
 // Output layout: [K x uint16 chunk-length header][chunk0 bytes][chunk1]...[chunk K-1]
 int arith_encode(const byte_t in[MAX_IN], int n, byte_t out[MAX_OUT]) {
+#ifdef __SYNTHESIS__
 #pragma HLS INTERFACE m_axi port=in  offset=slave bundle=gmem0
+#endif
+#ifdef __SYNTHESIS__
 #pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1
+#endif
 
     // Burst input into K separate banks so the K coders can read concurrently.
     static byte_t buf[KWAY][CHUNK_CAP];
+#ifdef __SYNTHESIS__
 #pragma HLS ARRAY_PARTITION variable=buf dim=1 complete
+#endif
     static byte_t cout[KWAY][CHUNK_CAP];
+#ifdef __SYNTHESIS__
 #pragma HLS ARRAY_PARTITION variable=cout dim=1 complete
+#endif
     int clen[KWAY];
+#ifdef __SYNTHESIS__
 #pragma HLS ARRAY_PARTITION variable=clen dim=1 complete
+#endif
 
     int chunk = (n + KWAY - 1) / KWAY;
 Split:
@@ -60,7 +70,9 @@ Split:
     // K concurrent coder instances.
 Encode_K:
     for (int c = 0; c < KWAY; c++) {
+#ifdef __SYNTHESIS__
 #pragma HLS UNROLL
+#endif
         int len = -(clen[c]) - 1;
         clen[c] = encode_chunk(buf[c], len, cout[c]);
     }

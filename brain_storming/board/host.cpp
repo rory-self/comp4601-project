@@ -1,109 +1,191 @@
-/*
- * On-fabric host for the K-way arithmetic-coding kernel (KV260, XRT).
- *  - loads the xclbin, runs arith_kernel(in, n, out, out_len) on the PL
- *  - verifies losslessness (decode the board output on the host, compare to input)
- *  - profiles with std::chrono around ONLY the kernel enqueue+wait
- * Build: aarch64 cross-compile against the XRT sysroot.
- */
-#include <iostream>
-#include <vector>
-#include <string>
-#include <cstring>
-#include <cstdint>
-#include <chrono>
+// On-fabric host for the K-way arithmetic-coding kernel (KV260, XRT).
+//   - loads the xclbin and runs arith_kernel(in, n, out, out_len) on the PL
+//   - verifies losslessness (decode the board's output, compare to the input)
+//   - profiles with std::chrono around ONLY the kernel enqueue + wait
+// Build (C++20): aarch64 cross-compile against the XRT sysroot.
+
 #include <algorithm>
+#include <array>
+#include <charconv>
+#include <chrono>
+#include <cstdint>
+#include <iostream>
+#include <numeric>
+#include <span>
+#include <string_view>
+#include <vector>
 
 #include "xrt/xrt_bo.h"
 #include "xrt/xrt_device.h"
 #include "xrt/xrt_kernel.h"
 
-#define KWAY 8
-#define MAX_IN 4096
-#define MAX_OUT 8192
-typedef unsigned char byte_t;
+namespace {
 
-// ---- probability model constants (must match the kernel / arith3.h) ----
-#define CODE_BITS 16
-#define TOP_VALUE ((uint32_t)((1u<<CODE_BITS)-1))
-#define FIRST_QTR ((TOP_VALUE+1)/4)
-#define HALF (2*FIRST_QTR)
-#define THIRD_QTR (3*FIRST_QTR)
-#define PROB_BITS 12
-#define PROB_TOTAL (1u<<PROB_BITS)
-#define PROB_INIT (PROB_TOTAL/2)
-#define MOVE_BITS 5
-#define NTREE 256
+using byte  = std::uint8_t;
+using Clock = std::chrono::high_resolution_clock;
 
-// ---- host-side decoder to verify the board output is lossless ----
-static long g_bit; static const byte_t* g_in; static int g_len;
-static inline uint32_t gb(){int bi=(int)(g_bit>>3),off=7-(int)(g_bit&7);g_bit++;return (uint32_t)((bi<g_len)?((g_in[bi]>>off)&1):0);}
-static inline int dbit(uint32_t&lo,uint32_t&hi,uint32_t&co,uint32_t&pr){uint32_t r=hi-lo+1,sp=(r*pr)>>PROB_BITS;int b;
- if((co-lo)<sp){b=0;hi=lo+sp-1;}else{b=1;lo=lo+sp;}
- for(;;){if(hi<HALF){}else if(lo>=HALF){co-=HALF;lo-=HALF;hi-=HALF;}else if(lo>=FIRST_QTR&&hi<THIRD_QTR){co-=FIRST_QTR;lo-=FIRST_QTR;hi-=FIRST_QTR;}else break;
-  lo=(lo<<1)&TOP_VALUE;hi=((hi<<1)|1)&TOP_VALUE;co=((co<<1)|gb())&TOP_VALUE;}
- if(b==0)pr+=(PROB_TOTAL-pr)>>MOVE_BITS;else pr-=pr>>MOVE_BITS;return b;}
-static int dec_chunk(const byte_t*in,int len,byte_t*out){g_in=in;g_len=len;g_bit=0;
- uint32_t fl=PROB_INIT,tr[NTREE];for(int i=0;i<NTREE;i++)tr[i]=PROB_INIT;
- uint32_t lo=0,hi=TOP_VALUE,co=0;for(int i=0;i<CODE_BITS;i++)co=(co<<1)|gb();int on=0;
- for(;;){if(!dbit(lo,hi,co,fl))break;int ctx=1,b=0;for(int j=7;j>=0;j--){int bit=dbit(lo,hi,co,tr[ctx]);b=(b<<1)|bit;ctx=(ctx<<1)|bit;}out[on++]=(byte_t)b;}return on;}
-static int dec_kway(const byte_t*c,int cl,byte_t*out){int L[KWAY],off=2*KWAY,on=0;
- for(int k=0;k<KWAY;k++)L[k]=c[2*k]|(c[2*k+1]<<8);
- for(int k=0;k<KWAY;k++){on+=dec_chunk(c+off,L[k],out+on);off+=L[k];}return on;}
+constexpr int kKWay   = 8;
+constexpr int kMaxIn  = 4096;
+constexpr int kMaxOut = 8192;
 
-static std::string arg_of(int c,char**v,const char*f,const char*d){for(int i=1;i<c-1;i++)if(!strcmp(v[i],f))return v[i+1];return d;}
+// Range-coder / bit-model parameters (must match the kernel).
+constexpr std::uint32_t kCodeBits  = 16;
+constexpr std::uint32_t kTop       = (1u << kCodeBits) - 1;
+constexpr std::uint32_t kFirstQtr  = (kTop + 1) / 4;
+constexpr std::uint32_t kHalf      = 2 * kFirstQtr;
+constexpr std::uint32_t kThirdQtr  = 3 * kFirstQtr;
+constexpr std::uint32_t kProbBits  = 12;
+constexpr std::uint32_t kProbTotal = 1u << kProbBits;
+constexpr std::uint32_t kProbInit  = kProbTotal / 2;
+constexpr std::uint32_t kMoveBits  = 5;
+constexpr int kNTree = 256;
 
-int main(int argc,char**argv){
-    std::string xclbin=arg_of(argc,argv,"-x","arith.bin");
-    int dev=std::stoi(arg_of(argc,argv,"-d","0"));
-    int N=std::stoi(arg_of(argc,argv,"-N","4095"));   // symbols
-    int iters=std::stoi(arg_of(argc,argv,"-n","2000"));
-    if(N>MAX_IN)N=MAX_IN;
+// Host-side decoder, used only to prove the board's output is lossless.
+class RangeDecoder {
+public:
+    explicit RangeDecoder(std::span<const byte> bits) : bits_{bits} { reset(); }
 
-    std::cout<<"Open device "<<dev<<"\nLoad xclbin "<<xclbin<<"\n";
-    auto device=xrt::device(dev);
-    auto uuid=device.load_xclbin(xclbin);
-    auto krnl=xrt::kernel(device,uuid,"arith_kernel");
+    // Decode one whole chunk (self-terminating via a "more-data" flag bit).
+    std::vector<byte> decode_chunk() {
+        std::array<std::uint32_t, kNTree> tree;
+        tree.fill(kProbInit);
+        std::uint32_t flag = kProbInit;
 
-    auto bo_in =xrt::bo(device,MAX_IN ,krnl.group_id(0));
-    auto bo_out=xrt::bo(device,MAX_OUT,krnl.group_id(2));
-    auto bo_len=xrt::bo(device,sizeof(int),krnl.group_id(3));
-    auto hin =bo_in.map<byte_t*>();
-    auto hout=bo_out.map<byte_t*>();
-    auto hlen=bo_len.map<int*>();
+        std::vector<byte> out;
+        while (decode_bit(flag)) {                 // 1 = another symbol follows
+            int ctx = 1, sym = 0;
+            for (int i = 7; i >= 0; --i) {
+                const int b = decode_bit(tree[ctx]);
+                sym = (sym << 1) | b;
+                ctx = (ctx << 1) | b;
+            }
+            out.push_back(static_cast<byte>(sym));
+        }
+        return out;
+    }
 
-    // input: compressible pattern (matches the co-sim workload)
-    for(int i=0;i<N;i++) hin[i]=(byte_t)('a'+(i%7));
+private:
+    std::span<const byte> bits_;
+    long          pos_  = 0;
+    std::uint32_t low_  = 0, high_ = kTop, code_ = 0;
+
+    void reset() {
+        for (std::uint32_t i = 0; i < kCodeBits; ++i) code_ = (code_ << 1) | next_bit();
+    }
+    std::uint32_t next_bit() {
+        const auto byte_idx = static_cast<std::size_t>(pos_ >> 3);
+        const int  off = 7 - static_cast<int>(pos_ & 7);
+        ++pos_;
+        return byte_idx < bits_.size() ? (bits_[byte_idx] >> off) & 1u : 0u;
+    }
+    int decode_bit(std::uint32_t& prob) {
+        const std::uint32_t range = high_ - low_ + 1;
+        const std::uint32_t split = (range * prob) >> kProbBits;
+        int bit;
+        if ((code_ - low_) < split) { bit = 0; high_ = low_ + split - 1; }
+        else                        { bit = 1; low_ = low_ + split; }
+        for (;;) {                                 // renormalise
+            if (high_ < kHalf) {
+            } else if (low_ >= kHalf)                       { code_ -= kHalf;     low_ -= kHalf;     high_ -= kHalf; }
+            else if (low_ >= kFirstQtr && high_ < kThirdQtr) { code_ -= kFirstQtr; low_ -= kFirstQtr; high_ -= kFirstQtr; }
+            else break;
+            low_  = (low_ << 1) & kTop;
+            high_ = ((high_ << 1) | 1) & kTop;
+            code_ = ((code_ << 1) | next_bit()) & kTop;
+        }
+        if (bit == 0) prob += (kProbTotal - prob) >> kMoveBits;
+        else          prob -= prob >> kMoveBits;
+        return bit;
+    }
+};
+
+// Split the compressed stream back into its K chunks and decode each.
+std::vector<byte> decode_kway(std::span<const byte> comp) {
+    std::vector<byte> out;
+    std::size_t offset = 2 * kKWay;                // header: K x uint16 lengths
+    for (int k = 0; k < kKWay; ++k) {
+        const int len = comp[2 * k] | (comp[2 * k + 1] << 8);
+        const auto chunk = RangeDecoder{comp.subspan(offset, len)}.decode_chunk();
+        out.insert(out.end(), chunk.begin(), chunk.end());
+        offset += len;
+    }
+    return out;
+}
+
+std::string_view arg_of(std::span<char*> args, std::string_view flag, std::string_view fallback) {
+    for (std::size_t i = 1; i + 1 < args.size(); ++i)
+        if (flag == args[i]) return args[i + 1];
+    return fallback;
+}
+int int_arg(std::span<char*> args, std::string_view flag, int fallback) {
+    const auto s = arg_of(args, flag, "");
+    int v = fallback;
+    std::from_chars(s.data(), s.data() + s.size(), v);
+    return v;
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    const std::span args{argv, static_cast<std::size_t>(argc)};
+    const std::string xclbin{arg_of(args, "-x", "arith.bin")};
+    const int dev   = int_arg(args, "-d", 0);
+    const int iters = int_arg(args, "-n", 2000);
+    const int n     = std::min(int_arg(args, "-N", 4095), kMaxIn);
+
+    std::cout << "Open device " << dev << "\nLoad xclbin " << xclbin << '\n';
+    auto device = xrt::device(dev);
+    const auto uuid = device.load_xclbin(xclbin);
+    auto kernel = xrt::kernel(device, uuid, "arith_kernel");
+
+    // Buffer args sit at kernel indices 0 (in), 2 (out), 3 (out_len); index 1 is the scalar n.
+    auto bo_in  = xrt::bo(device, kMaxIn,      kernel.group_id(0));
+    auto bo_out = xrt::bo(device, kMaxOut,     kernel.group_id(2));
+    auto bo_len = xrt::bo(device, sizeof(int), kernel.group_id(3));
+    auto* in  = bo_in.map<byte*>();
+    auto* out = bo_out.map<byte*>();
+    auto* len = bo_len.map<int*>();
+
+    // Input: a compressible pattern (matches the co-sim workload).
+    for (int i = 0; i < n; ++i) in[i] = static_cast<byte>('a' + (i % 7));
     bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
     // --- correctness run ---
-    auto run=krnl(bo_in,N,bo_out,bo_len); run.wait();
-    bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE); bo_len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-    int clen=hlen[0];
-    static byte_t dec[MAX_IN];
-    int dn=dec_kway(hout,clen,dec);
-    bool ok=(dn==N); for(int i=0;i<N&&ok;i++) ok=(dec[i]==hin[i]);
-    std::cout<<"----------------------------------------------\n";
-    std::cout<<"input "<<N<<" symbols -> compressed "<<clen<<" bytes ("<<(100.0*clen/N)<<"%)\n";
-    std::cout<<(ok?"PASS: board output is lossless (decode == input)\n":"FAIL: round-trip mismatch\n");
-    std::cout<<"----------------------------------------------\n";
+    kernel(bo_in, n, bo_out, bo_len).wait();
+    bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+    bo_len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
 
-    // --- profiling: time only enqueue+wait ---
-    std::vector<double> us; us.reserve(iters);
-    for(int k=0;k<iters;k++){
-        auto t0=std::chrono::high_resolution_clock::now();
-        auto r=krnl(bo_in,N,bo_out,bo_len); r.wait();
-        auto t1=std::chrono::high_resolution_clock::now();
-        us.push_back(std::chrono::duration<double,std::micro>(t1-t0).count());
+    const int  clen = len[0];
+    const auto decoded = decode_kway({out, static_cast<std::size_t>(clen)});
+    const bool lossless = static_cast<int>(decoded.size()) == n &&
+                          std::equal(decoded.begin(), decoded.end(), in);
+
+    std::cout << "----------------------------------------------\n"
+              << "input " << n << " symbols -> compressed " << clen
+              << " bytes (" << (100.0 * clen / n) << "%)\n"
+              << (lossless ? "PASS: board output is lossless (decode == input)\n"
+                           : "FAIL: round-trip mismatch\n")
+              << "----------------------------------------------\n";
+
+    // --- profiling: time only enqueue + wait ---
+    std::vector<double> samples;
+    samples.reserve(iters);
+    for (int k = 0; k < iters; ++k) {
+        const auto t0 = Clock::now();
+        kernel(bo_in, n, bo_out, bo_len).wait();
+        const auto t1 = Clock::now();
+        samples.push_back(std::chrono::duration<double, std::micro>(t1 - t0).count());
     }
-    std::sort(us.begin(),us.end());
-    double tot=0; for(double v:us) tot+=v;
-    double mean=tot/us.size(), med=us[us.size()/2];
-    std::cout<<"\n=== On-fabric kernel profiling (chrono around krnl()+wait only) ===\n";
-    std::cout<<"iterations       : "<<iters<<"\n";
-    std::cout<<"mean per call    : "<<mean<<" us  ("<<N<<" symbols)\n";
-    std::cout<<"median per call  : "<<med<<" us\n";
-    std::cout<<"min/max per call : "<<us.front()<<" / "<<us.back()<<" us\n";
-    std::cout<<"per-symbol       : "<<(mean*1000.0/N)<<" ns/sym\n";
-    std::cout<<"throughput       : "<<(N/mean)<<" M symbols/s\n";
-    return ok?0:1;
+    std::ranges::sort(samples);
+    const double mean   = std::reduce(samples.begin(), samples.end()) / samples.size();
+    const double median = samples[samples.size() / 2];
+
+    std::cout << "\n=== On-fabric kernel profiling (chrono around krnl()+wait only) ===\n"
+              << "iterations       : " << iters << '\n'
+              << "mean per call    : " << mean << " us  (" << n << " symbols)\n"
+              << "median per call  : " << median << " us\n"
+              << "min/max per call : " << samples.front() << " / " << samples.back() << " us\n"
+              << "per-symbol       : " << (mean * 1000.0 / n) << " ns/sym\n"
+              << "throughput       : " << (n / mean) << " M symbols/s\n";
+    return lossless ? 0 : 1;
 }
