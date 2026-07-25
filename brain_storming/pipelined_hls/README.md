@@ -57,3 +57,26 @@ v++ -c --mode hls --config hls_config6.cfg
 ```
 Look for `Flat` in the csynth report: `II = 1` is the goal; the achieved II
 directly scales all predictions above.
+
+## Running V6 on the board
+
+**`board/host.cpp` is reused unchanged.** It only depends on the kernel name
+(`arith_kernel`), the port layout (`in, n, out, out_len`) and the compressed
+output format — all identical, since V6 is bit-exact with V5. The same goes
+for `board/link.cfg` and the host-side decoder.
+
+What must be rebuilt is the **bitstream** — the prebuilt `board/arith.bin`
+contains the V5 coder. `arith_board.cpp` (copied here unchanged) wraps
+`arith_encode` as `arith_kernel`, and `hls_board6.cfg` is the V5 board config
+with `arith5.cpp` swapped for `arith6.cpp` (K=8, matching the host's
+`#define KWAY 8`):
+
+```
+vitis-run --mode hls --package --config hls_board6.cfg    # -> arith_kernel.xo
+v++ --link --target hw --config ../board/link.cfg <platform args> arith_kernel.xo -o arith.xclbin
+# then on the board, as before:
+#   xmutil loadapp <new firmware>   and   ./arith_host_arm -x <new .bin> -N 4095 -n 2000
+```
+
+If you change K, change it in BOTH `hls_board6.cfg` (syn.cflags) and
+`host.cpp` (`#define KWAY`), or the host will misparse the chunk header.
