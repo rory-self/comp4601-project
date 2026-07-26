@@ -98,8 +98,19 @@ Flat:
             if (is_flag) { bit = (k < n) ? 1 : 0;      prob = flag_prob;  }
             else         { bit = (b >> (8 - p)) & 1;   prob = tree[ctx]; }
 
-            uint32_t range = high - low + 1;
-            uint32_t split = (range * prob) >> PROB_BITS;   // shift, no divide
+            // range is mathematically bounded to CODE_BITS+1 bits (high,low <=
+            // TOP_VALUE, so range <= TOP_VALUE+1) and prob to PROB_BITS bits
+            // (PROB_TOTAL is a power of 2, and the adaptive update below never
+            // lets prob reach 0 or PROB_TOTAL) -- but low/high/prob are plain
+            // uint32_t loop-carried state that crosses many FSM/phi merges, so
+            // Vitis's automatic bit-width narrowing cannot prove those bounds
+            // and falls back to a full 32x32 multiply (3+ cascaded DSPs, the
+            // dominant term in this state's critical path). The AND masks
+            // below are numeric no-ops (the values never exceed the mask) but
+            // give the width optimizer an explicit, local hint so it can bind
+            // this to the intended 17x12-bit multiply (single DSP).
+            uint32_t range = (high - low + 1) & ((1u << (CODE_BITS + 1)) - 1);
+            uint32_t split = ((range * (prob & (PROB_TOTAL - 1))) >> PROB_BITS); // shift, no divide
             if (bit == 0) high = low + split - 1;
             else          low  = low + split;
 
