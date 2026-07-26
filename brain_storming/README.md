@@ -22,8 +22,15 @@ sense.
   symbols/s = 3.84× the ARM CPU**, matching the co-simulation prediction within
   ~3% (§6). There is also a **live image-compression demo** — CPU vs FPGA on the
   board — see `demo/` and §7.
-- **Iteration 2 — planned.** Make each *single* copy faster by pipelining it
-  (harder; see §8). This would multiply on top of the replication.
+- **Iteration 2 — HLS experiments complete.** A time-interleaved design raises
+  each stream's recurrence distance and achieves aggregate **II=1** with shared
+  arithmetic hardware. The best resource-efficient variant reaches **22.30 M
+  symbols/s = 6.45× ARM** in RTL co-simulation using only 21% LUT, while
+  preserving the original 255-context model. See
+  [`interleaved_hls/RESULTS.md`](interleaved_hls/RESULTS.md). A separate
+  near-device-filling K=31 experiment reaches 28.20 M symbols/s at 95% LUT but
+  weakens the probability model; see [`max_hls/RESULTS.md`](max_hls/RESULTS.md).
+  Neither iteration-2 design has yet been placed/routed or board-validated.
 
 ---
 
@@ -169,6 +176,33 @@ FPGA overtakes the CPU.
 | Best HLS — K=8, co-simulation (predicted) | 12.9 M symbols/s | 3.7× |
 | Best HLS — K=16, co-simulation | 16.8 M symbols/s | 4.9× |
 
+### Iteration-2 comparison (HLS synthesis + RTL co-simulation)
+
+These designs have not yet been placed/routed or tested on the board:
+
+| design | clock | throughput | vs ARM | LUT | probability model |
+|---|---:|---:|---:|---:|---|
+| Original physically replicated K=16 | 200 MHz | 16.8 M symbols/s | 4.9× | 71% | 255-context tree |
+| Interleaved, 4 shared engines | 200 MHz | 20.68 M symbols/s | 5.98× | 18% | 255-context tree |
+| **Interleaved, 8 shared engines** | **150 MHz** | **22.30 M symbols/s** | **6.45×** | **21%** | 255-context tree |
+| Lean physically replicated K=31 | 200 MHz | 28.20 M symbols/s | 8.15× | 95% | reduced 8-probability model |
+
+The time-interleaved architecture is the main iteration-2 result. Independent
+coder states rotate through shared arithmetic pipelines, increasing the
+recurrence distance enough for HLS to schedule the central loop at aggregate
+**II=1**. It improves throughput per LUT substantially without weakening the
+model or changing the K=16 compression ratio. The K=31 result is an absolute
+HLS-throughput experiment, but it depends on nearly filling this specific FPGA
+and sacrifices compression efficiency.
+
+Memory access was tested separately. The compatible byte-pointer version already
+inferred AXI bursts and completed the 4095-symbol four-engine test in **39,606
+cycles**. Explicitly gathering a 64-bit input into unaligned per-chunk words took
+**52,635 cycles**, used more LUT/BRAM, and was 32.9% slower. Input staging plus
+header/output assembly account for at most about 15% of the recommended design's
+latency, so arithmetic work remains the main bottleneck. Details and reproducible
+configs are in [`interleaved_hls/RESULTS.md`](interleaved_hls/RESULTS.md).
+
 **On-fabric validation (the important confirmation):** the K=8 kernel was
 synthesised (closes timing at 200 MHz, 3.65 ns), linked into a bitstream, loaded
 onto the PL, and driven by an XRT host. Measured: **13.29 M symbols/s (3.84× the
@@ -270,7 +304,7 @@ lossless). The demo also prints the image as ASCII art before and after.
 
 ---
 
-## 8. Caveats & what iteration 2 will try
+## 8. Caveats and iteration-2 findings
 
 **Caveats (be honest about these):**
 - Numbers are **workload-dependent**. Test input is compressible; near-random
@@ -278,16 +312,25 @@ lossless). The demo also prints the image as ASCII art before and after.
 - **Compression ratio degrades slightly with K** — each of the K chunks restarts
   its adaptive model and adds a small header. It's a throughput-vs-ratio trade you
   tune with K.
+- End-to-end acceleration still changes with image size because model reset,
+  headers, transfers, and launch time are fixed costs. The iteration-2 comparison
+  therefore uses the same 4095-symbol workload for every design.
+- Resource estimates are device-specific, but the interleaved design reduces
+  that dependence: its best candidate uses only 21% LUT rather than obtaining
+  speed by filling the KV260.
 
-**Iteration 2 — pipeline the single stream (the hard part).** Right now each
-stream is sequential. The way to speed up *one* stream is to restructure the coder
-into a **flat state machine** that does exactly one unit of work per clock cycle
-(either one interval update *or* one renormalisation step), with the variable-rate
-output pushed into an `hls::stream` FIFO so it can't stall the pipeline. That
-would make one stream ~5× faster, and because it **multiplies** with replication,
-the combination could reach ~10–15× over the ARM CPU. It is genuinely hard and
-uncertain (a naive pipeline pragma does not converge — see §3), which is why it's
-a separate iteration.
+**What iteration 2 established:**
+- A flat single-state FSM is not enough: HLS scheduled its main loop at **II=25**
+  because the interval recurrence still has distance one.
+- Rotating independent states through a shared datapath changes that recurrence
+  distance and achieves **II=1**.
+- Four shared engines are the safer 200 MHz candidate; eight engines give the
+  best theoretical resource-efficient throughput at 150 MHz.
+- Merely widening the existing contiguous-chunk memory layout is counterproductive
+  because its unaligned gather cost exceeds the saved AXI transactions.
+- Streaming overlap could improve the current workload by at most roughly 1.18×
+  and would require a striped host layout or multiple AXI channels, so it is not
+  the central source of acceleration.
 
 ---
 
@@ -314,4 +357,14 @@ demo/        demo_host.cpp                          image demo: CPU vs FPGA comp
              demo_arm                               prebuilt aarch64 demo binary
              image.pgm/.png, reconstructed.png      the test image + its (identical) reconstruction
              arith5.cpp, arith3.h                   coder sources (for standalone build)
+interleaved_hls/
+             arith_interleaved.cpp/.h                shared II=1 time-interleaved coder
+             interleaved_test.cpp                    lossless software/RTL testbench
+             interleaved_g4.cfg                      4-engine, 200 MHz board candidate
+             interleaved_g8_150.cfg                  8-engine, 150 MHz throughput candidate
+             interleaved_g4_wide.cfg                 rejected wide-input comparison
+             RESULTS.md                              full synthesis/co-simulation findings
+max_hls/    arith_max.cpp/.h                         lean near-device-filling K=31 experiment
+             arith_max_test.cpp, k31_max.cfg         lossless test + HLS configuration
+             RESULTS.md                              limits, compression cost, and results
 ```
