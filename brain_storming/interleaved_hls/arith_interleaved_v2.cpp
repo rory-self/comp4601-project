@@ -59,7 +59,9 @@ static inline void emit_one(unsigned bit, uint8_t &obyte, uint8_t &nbits,
 }
 
 int arith_encode_interleaved(const byte_t in[MAX_IN], int n, byte_t out[MAX_OUT]) {
-#ifdef __SYNTHESIS__
+// When BOARD_WRAP is defined the interfaces are declared by the arith_kernel
+// wrapper (arith_board_v2.cpp), so this core is used as a plain sub-function.
+#if defined(__SYNTHESIS__) && !defined(BOARD_WRAP)
 #pragma HLS INTERFACE m_axi port=in offset=slave bundle=gmem0
 #pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1
 #endif
