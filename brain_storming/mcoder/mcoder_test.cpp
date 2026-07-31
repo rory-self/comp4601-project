@@ -238,6 +238,10 @@ int main(int argc, char **argv) {
            all.mc_cycles / (double)all.bytes,
            100.0 * (all.mc_comp - all.v5_comp) / (double)all.v5_comp);
 
+    if (g_mc_prof.ctx_dist_violations)
+        printf("FAIL: context reused within 8 bins %ld times (breaks the kernel's\n"
+               "      HLS DEPENDENCE distance=8 assertion)\n", g_mc_prof.ctx_dist_violations);
+
     if (g_mc_prof.sm_violations)
         printf("FAIL: MPS-renorm shortcut violated %ld times\n", g_mc_prof.sm_violations);
 

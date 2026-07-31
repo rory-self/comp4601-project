@@ -15,11 +15,11 @@
  *      one 256-byte table read.  No multiplier, no DSP, no divide.
  *
  *   2. Renormalisation: V5 runs a data-dependent  while (needs shift)  loop
- *      (bounded at 32 trips) that shifts by one bit per iteration.  Here the
- *      shift count comes from a leading-zero count on the 9-bit range, and the
- *      range update is a single barrel shift.  The bit-emit side is a
- *      fixed-depth 8-deep unrolled block, so the loop has no data-dependent
- *      trip count and can be flattened into the pipeline.
+ *      (bounded at 32 trips) that shifts by one bit per iteration.  Here there
+ *      is no loop at all: the range update is a single barrel shift, and the
+ *      eight possible bit-emit classifications are produced in parallel by a
+ *      prefix-AND (see mc_renorm_low).  Fixed latency, so the coding loop
+ *      pipelines at II=1.
  *
  *   3. Model update: V5 does  prob += (4096 - prob) >> 5  /  prob -= prob >> 5.
  *      Here it is  state = ROM[state], two 64-byte tables.  Context state
@@ -56,10 +56,10 @@
 
 #define MC_NTREE      256          /* bit-tree contexts, index 1..255 */
 
-/* Engine constants.  range lives in [256, 510]; low in [0, 1024]. */
+/* Engine constants.  range lives in [256, 510]; low in [0, 1022].
+ * The QUARTER/HALF thresholds the classifier used to compare against are now
+ * implicit in the bit tests of mc_renorm_low, so they are no longer defined. */
 #define MC_RANGE_INIT 510u
-#define MC_QUARTER    256u
-#define MC_HALF       512u
 
 typedef unsigned char mc_byte;
 
@@ -79,13 +79,12 @@ typedef unsigned char mc_ctx;
 typedef struct {
     long bins;            /* binary decisions coded                         */
     long renorm_steps;    /* total renorm shift positions (sum of s)        */
-    long emit_calls;      /* put_bit invocations                            */
     long emit_bits;       /* raw bits appended to the stream                */
     long bytes_out;       /* whole bytes retired through the output port    */
     long stalls;          /* cycles a bin had to wait on the output port    */
     long max_run;         /* longest deferred-carry run seen                */
-    long mults;           /* variable-operand multiplies (should be zero)   */
     long sm_violations;   /* MPS-renorm shortcut broken (must stay 0)       */
+    long ctx_dist_violations; /* two uses of one context < 8 bins apart      */
 } mc_prof_t;
 extern mc_prof_t g_mc_prof;
 #define MC_PROF(x) do { g_mc_prof.x; } while (0)
@@ -118,14 +117,22 @@ static inline int mc_shift_of(uint32_t range) {
 /*
  * The engine is split into two halves that share nothing but a token.
  *
- *   mc_renorm_classify()  owns low/range.  Fixed latency: an LZC, a barrel
- *                         shift, and a fixed 8-deep classification of the
- *                         shifted-out bit positions.  No output, no carry
- *                         state, no variable-trip loop -- so it pipelines.
+ *   mc_code_bin()      owns low/range/context.  Fixed latency: a ROM read, a
+ *                      subtract, a barrel shift and a prefix-AND.  No output,
+ *                      no carry state, no variable-trip loop -- so it
+ *                      pipelines at II=1.  This is what the kernel's coding
+ *                      stage calls.
  *
- *   mc_pack_steps()       owns the deferred-carry count and the byte packer.
- *                         Variable latency, because emitting a deferred run
- *                         of length m costs bytes on the output port.
+ *   mc_pack_steps()    owns the deferred-carry count and the byte packer.
+ *                      Variable latency, because emitting a deferred run of
+ *                      length m costs bytes on the output port.
+ *
+ * Only the packer differs between software and hardware.  The software one
+ * below packs a whole token immediately, which is simplest to read and is what
+ * the Phase 1 corpus validates.  The kernel flattens the same work into a
+ * pipelined one-unit-per-cycle loop (hls/mcoder_hls.cpp) because nested
+ * variable-trip loops cost ~10 cycles of loop control per step in hardware.
+ * Both consume the identical token stream and emit the identical bits.
  *
  * Why split it this way: draining a deferred run is unbounded work, and any
  * variable-trip loop inside the coding loop stops HLS pipelining it (measured:
@@ -144,9 +151,9 @@ static inline int mc_shift_of(uint32_t range) {
  * dataflow kernel are built from these same two primitives, so the Phase 1
  * round-trip corpus validates exactly the decomposition the hardware uses.
  */
-#define MC_E1  0u   /* low <  QUARTER  -> emit 0, then drain the deferred run */
-#define MC_E2  1u   /* low >= HALF     -> emit 1, then drain the deferred run */
-#define MC_E3  2u   /* straddles       -> defer one more bit                  */
+#define MC_E1  0u   /* low <  1/4  -> emit 0, then drain the deferred run */
+#define MC_E2  1u   /* low >= 1/2  -> emit 1, then drain the deferred run */
+#define MC_E3  2u   /* straddles   -> defer one more bit                   */
 
 typedef struct {
     uint32_t cls;   /* 2 bits per step, step i at bits [2i+1:2i] */
@@ -298,7 +305,6 @@ Drain:
 
 /* PutBit(b): emit b, then drain `outstanding` copies of !b. */
 static inline void mc_pack_put(mc_pack *p, int b) {
-    MC_PROF(emit_calls++);
     if (p->first) p->first = 0;
     else          mc_pack_bits(p, (uint32_t)(b & 1), 1);
 

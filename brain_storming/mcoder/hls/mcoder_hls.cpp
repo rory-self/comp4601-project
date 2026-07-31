@@ -63,7 +63,30 @@ long g_tok_units = 0;       /* tokens pushed, worst chunk     */
 /* ---------------- stage 1: the coder ---------------- */
 static void mc_bin_stage(const mc_byte *in, int n, hls::stream<mc_tok> &tok) {
     mc_ctx tree[MC_NTREE];
+#ifdef MC_CTX_LUTRAM
+    /*
+     * Distributed RAM instead of a 256-entry register file.  Complete
+     * partitioning costs a 256:1 read mux and a 256-way write decode --
+     * measured at 6759 LUT per coder, ~90% of the design.  As LUTRAM the same
+     * array is 800.
+     *
+     * The read-modify-write then takes two cycles, which would force II=2
+     * unless HLS knows how far apart two accesses to the same address can be.
+     * It is exactly 8 iterations, and that is provable rather than hopeful:
+     * within one byte ctx walks strictly down the bit-tree, so its 8 values are
+     * distinct; and across bytes, bin position j only ever addresses
+     * [2^j, 2^(j+1)-1], and those ranges are disjoint.  So the same context is
+     * revisited only at the same bit position of the next byte -- 8 bins later.
+     */
+#ifdef MC_CTX_BRAM
+#pragma HLS BIND_STORAGE variable=tree type=RAM_2P impl=BRAM
+#else
+#pragma HLS BIND_STORAGE variable=tree type=RAM_2P impl=LUTRAM
+#endif
+#pragma HLS DEPENDENCE variable=tree type=inter direction=RAW distance=8 dependent=true
+#else
 #pragma HLS ARRAY_PARTITION variable=tree complete
+#endif
 Init:
     for (int i = 0; i < MC_NTREE; i++) {
 #pragma HLS UNROLL

@@ -24,6 +24,18 @@ int mc_encode_chunk(const mc_byte *in, int n, mc_byte *out) {
     mc_enc e;
     mc_enc_init(&e, out);
 
+#ifdef MC_PROFILE
+    /* The kernel binds `tree` to LUTRAM and asserts, via #pragma HLS
+     * DEPENDENCE, that two accesses to the same context are at least 8 bins
+     * apart -- that is what lets a 2-cycle read-modify-write still pipeline at
+     * II=1.  The argument is that ctx walks strictly down the bit-tree within a
+     * byte, and that bit position j only ever addresses [2^j, 2^(j+1)-1].
+     * Rather than trust it, check it on every byte of the real corpus. */
+    long last_use[MC_NTREE];
+    for (int i = 0; i < MC_NTREE; i++) last_use[i] = -1000;
+    long bin_index = 0;
+#endif
+
     for (int k = 0; k < n; k++) {
 #ifdef MC_TERM_FLAG
         mc_encode_bin(&e, &flag, 1);        /* another symbol follows */
@@ -32,6 +44,10 @@ int mc_encode_chunk(const mc_byte *in, int n, mc_byte *out) {
         /* 8-level bit-tree: MSB first, context = the bits decoded so far. */
         for (int j = 7; j >= 0; j--) {
             int bit = (b >> j) & 1;
+#ifdef MC_PROFILE
+            if (bin_index - last_use[ctx] < 8) g_mc_prof.ctx_dist_violations++;
+            last_use[ctx] = bin_index++;
+#endif
             mc_encode_bin(&e, &tree[ctx], bit);
             ctx = (ctx << 1) | bit;
         }

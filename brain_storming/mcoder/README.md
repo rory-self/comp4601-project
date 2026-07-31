@@ -165,6 +165,9 @@ real ratio there. On the demo image and on text it does not.
 | [hls/mcoder_hls_test.cpp](hls/mcoder_hls_test.cpp) | csim/cosim testbench, self-checking via the real decoder |
 | [hls/hls_config.cfg](hls/hls_config.cfg) | part, 6.0 ns clock, top = `mc_encode` |
 | [hls/sweep_hls.sh](hls/sweep_hls.sh) | K sweep: synthesis + cosim → `results/mcoder_hls_sweep.csv` |
+| [hls/mcoder_board.cpp](hls/mcoder_board.cpp) | board top-level, signature-compatible with V5's `arith_kernel` |
+| [hls/hls_board.cfg](hls/hls_board.cfg) | board build → `arith_kernel.xo` |
+| [host/mc_host.cpp](host/mc_host.cpp) | XRT host — links the real decoder, `-f` for real data, `make sim` for a boardless test |
 
 Counters compile out entirely without `-DMC_PROFILE`, so the HLS build never
 sees them.
@@ -295,16 +298,32 @@ than relying on the measured 17-bit maximum.
 Cycles are **measured by cosim** on the testbench corpus (5130 bytes over 6 data
 profiles), so they include the AXI copy loops and the packer, not just the coder.
 
-| K | timing viol | Bins II | cosim cycles | cyc/byte | LUT | LUT % | BRAM | DSP |
-|---|---|---|---|---|---|---|---|---|
-| 1 | 0 | 1 | 73578 | 14.34 | 11243 | 9% | 13 | 0 |
-| 2 | 0 | 1 | 46906 | 9.14 | 19946 | 17% | 16 | 0 |
-| 4 | 0 | 1 | 35292 | 6.88 | 35530 | 30% | 22 | 0 |
-| **8** | **0** | **1** | **32694** | **6.37** | **67349** | **57%** | 42 | **0** |
-| 16 | 0 | 1 | 39505 | 7.70 | 131000 | **111%** | 82 | 2 |
+Two context-storage variants are swept: `ctxreg` (partitioned register file)
+and `ctxram` (distributed RAM — see
+[Resource balance](#resource-balance-why-dsp0-and-bram-is-low)).
+**Every one of the ten configurations closes timing with II=1.**
 
-**K=8 is the operating point.** Timing closes and II=1 holds at every K, but
-K=16 does not fit the device (111% LUT) and is *slower* than K=8 anyway.
+| variant | K | cosim cycles | cyc/byte | LUT | LUT % | FF | BRAM | DSP |
+|---|---|---|---|---|---|---|---|---|
+| ctxreg | 1 | 73578 | 14.34 | 11243 | 9% | 4936 | 13 | 0 |
+| ctxreg | 2 | 46906 | 9.14 | 19946 | 17% | 8089 | 16 | 0 |
+| ctxreg | 4 | 35292 | 6.88 | 35530 | 30% | 13609 | 22 | 0 |
+| ctxreg | 8 | 32694 | **6.37** | 67349 | 57% | 24792 | 42 | 0 |
+| ctxreg | 16 | 39505 | 7.70 | 131000 | **111%** — does not fit | 47181 | 82 | 2 |
+| ctxram | 1 | 75120 | 14.64 | 8049 | 6% | 3377 | 13 | 0 |
+| ctxram | 2 | 48448 | 9.44 | 13558 | 11% | 4971 | 16 | 0 |
+| ctxram | 4 | 36834 | 7.18 | 22754 | 19% | 7373 | 22 | 0 |
+| **ctxram** | **8** | **34236** | **6.67** | **41797** | **35%** | 12320 | 42 | **0** |
+| ctxram | 16 | 41047 | 8.00 | 79896 | 68% | 22237 | 82 | 2 |
+
+**`ctxram` at K=8 is the operating point** and the default in
+`hls_config.cfg`: 35% LUT instead of 57% for 4.7% more cycles.
+
+Two things the sweep settles. K=16 does not fit at all with register contexts
+(111% LUT), and even once `ctxram` makes it fit (68%) it is *slower* than K=8 —
+8.00 against 6.67 cyc/byte. And the returns collapse well before that: K=1→2
+buys 36%, K=2→4 buys 24%, K=4→8 buys 7%. That is the AXI ceiling, not the
+coder.
 
 ### The coder is no longer the bottleneck
 
@@ -338,12 +357,193 @@ Worth being clear about the shape of that number: the *coder* got ~10× faster
 byte-wide AXI copies now dominate. Fixing those is where the remaining speedup
 is.
 
+### Resource balance: why DSP=0 and BRAM stays low
+
+**LUTRAM is not BRAM.** They are different physical resources, and the fix
+below uses LUTRAM, so the BRAM column does not move at all:
+
+| | BRAM (block RAM) | LUTRAM (distributed RAM) |
+|---|---|---|
+| what it is | dedicated 36 Kb hard blocks (144 on this part) | the 64-bit SRAM cell inside a SLICEM LUT6 |
+| counted as | `BRAM` | **`LUT`** |
+| read | synchronous, ≥1 cycle | **asynchronous / combinational** |
+| good for | KB-scale buffers | small, latency-critical tables |
+
+The asynchronous read is why LUTRAM suits the context array: the
+read-modify-write still resolves fast enough to pipeline. And because LUTRAM is
+*made of* LUTs, the saving shows up as a smaller LUT count, not as BRAM usage —
+it went 67349 → 41797 rather than to near zero.
+
+Using true BRAM for the contexts was measured too, and is **not** worth it:
+
+| K=8, contexts in | LUT | BRAM | cyc/byte |
+|---|---|---|---|
+| registers | 67349 (57%) | 42 (14%) | 6.37 |
+| **LUTRAM** | **41797 (35%)** | **42 (14%)** | 6.67 |
+| BRAM | 41573 (35%) | 50 (17%) | 6.67 |
+
+8 extra BRAM blocks to save ~200 LUTs. The array is 256 × 8 bits = 2 Kb, and a
+BRAM18 holds 18 Kb, so ~89% of each block would sit idle. LUTRAM is simply the
+right-sized resource for a table this small.
+
+BRAM stays at 14% because what actually lives there is the `buf[][]`/`cout[][]`
+staging arrays — and those are sized by the chunk buffers, not by anything the
+coder does.
+
+The design is **LUT-bound**; DSP and BRAM are near-idle. That is worth
+unpacking, because it is half deliberate and half a missed opportunity.
+
+**DSP=0 is the point, not waste.** V5 spent 6 DSPs per instance on
+`range * prob >> 12`, and that multiply was the critical path. The M-coder
+replaces it with a ROM read, so there is no multiply anywhere in the design.
+There is no useful way to spend the DSPs back: a DSP48E2 is a 27×18 multiplier
+/ 48-bit ALU, and this datapath is 9–10 bits wide. Forcing a 9-bit subtract
+into a DSP adds latency and saves no LUTs worth having. The DSPs are simply not
+the right shape for this problem — and freeing them is a *result*, since they
+are now available to whatever else shares the device.
+
+**The missed opportunity was the context array, and it was worth ~22% of the
+device.** Measured at K=8, `mc_bin_stage_Pipeline_Bins` was **6759 LUT and 2143 FF per
+coder** — about 90% of the whole design — while `mc_pack_stage` was 630 LUT.
+The 2143 FF is 256 contexts × 8 bits: `#pragma HLS ARRAY_PARTITION complete`
+had built a 256-entry register file, whose 256:1 read mux and 256-way write
+decode are what the LUTs were paying for.
+
+Binding that array to distributed RAM instead (`-DMC_CTX_LUTRAM`) collapses it:
+
+| K=8 | contexts in registers | contexts in LUTRAM |
+|---|---|---|
+| LUT | 67349 (57%) | **41797 (35%)** |
+| FF | 24792 | 12320 |
+| `Bins` LUT / coder | 6759 | **800** |
+| cyc/byte | 6.37 | 6.67 |
+| II | 1 | 1 |
+| timing | clean | clean |
+
+**−38% LUT for +4.7% cycles**, so it is the default in `hls_config.cfg`.
+
+The catch is that LUTRAM makes the read-modify-write take two cycles, which
+forces II=2 unless HLS is told how far apart two accesses to the same context
+can be. It is exactly 8 bins, and that is provable: within one byte `ctx` walks
+strictly down the bit-tree so its 8 values are distinct, and across bytes, bit
+position `j` only ever addresses `[2^j, 2^(j+1)-1]`, and those ranges are
+disjoint. So a context recurs only at the same bit position of the next byte.
+
+`#pragma HLS DEPENDENCE ... distance=8` states that, and HLS cannot check it —
+so it is checked two other ways: `mcoder_test` tracks the actual distance
+between uses of every context over the whole corpus and fails on any violation
+(`ctx_dist_violations`), and cosim would fail the round-trip if a context were
+ever read stale, since the decoder updates its model strictly sequentially.
+
+**This does not buy throughput, though.** With the area freed, K=16 fits for the
+first time (68% LUT, timing clean, II=1) — and is *slower*: 8.00 cyc/byte
+against K=8's 6.67. That is the AXI ceiling again, and it is the clearest
+evidence that more coders are not the answer. The win here is area and routing
+headroom for the memory-path work, not speed.
+
 ### Compression cost of K
 
 From `results/mcoder_sweep.csv` (Phase 1). The M-coder's per-chunk ratio penalty
 is ~30% smaller than V5's — V5 pays +11.0 points going K=1→16, the M-coder
 +7.7 — so at the K=8 operating point the M-coder is **5.1% smaller** than V5
 while also being faster.
+
+## Board integration — can you reuse the V5 host?
+
+**Mostly yes: the XRT plumbing is unchanged, but the host-side decoder must be
+replaced.**
+
+To make that true, [hls/mcoder_board.cpp](hls/mcoder_board.cpp) exports a top
+level deliberately identical in shape to V5's `board/arith_board.cpp`:
+
+```c
+void arith_kernel(const byte in[MAX_IN], int n, byte out[MAX_OUT], int out_len[1])
+```
+
+Same kernel name, same four arguments, same `gmem0/gmem1/gmem2` bundles. So in
+[board/host.cpp](../board/host.cpp) these all keep working as-is:
+
+- `xrt::kernel(device, uuid, "arith_kernel")` — name matches
+- `krnl.group_id(0) / (2) / (3)` — argument indices match (`in`, `out`, `out_len`)
+- the buffer sizes, `sync()` calls, and the timing loop
+- `board/link.cfg`'s `nk=arith_kernel:1:arith_kernel_1` — no edit needed
+
+Build it with:
+
+```
+cd hls && v++ -c --mode hls --config hls_board.cfg --work_dir work_board
+vitis-run --mode hls --package --config hls_board.cfg --work_dir work_board
+```
+
+→ `arith_kernel.xo` (verified: cosim PASS, 0 timing violations, II=1).
+
+### The host
+
+[host/mc_host.cpp](host/mc_host.cpp) is the M-coder host, built on V5's XRT
+structure (same kernel lookup, same buffer objects, same chrono-around-
+enqueue+wait profiling) with three changes:
+
+```
+cd host
+make SYSROOT=<xrt-sysroot>          # aarch64 board build -> mc_host_arm
+make sim                            # host-logic test on this machine, no XRT
+./mc_host_arm -x mcoder.bin -f image.pgm -N 4095 -n 2000
+```
+
+1. **It links `../mcoder_dec.cpp` rather than carrying its own decoder.** V5's
+   host inlined a copy with a comment that its constants "must match the kernel
+   / arith3.h" — which is exactly how a decoder silently drifts from its
+   encoder. There is now one decoder in the project, the same one Phase 1 and
+   cosim validate against.
+2. **`-f <file>` runs real data.** V5's host measured `'a'+(i%7)`, which
+   compresses to 41.2% where the demo image gives 67.4%. Throughput is
+   content-independent (8 bins/byte regardless), but the *ratio* is not, and
+   the synthetic number flatters it.
+3. **`make sim`** swaps the kernel call for the software encoder so the
+   argument handling, file IO, verification and reporting can be exercised
+   without a board. It does not test XRT.
+
+It also reports implied cycles/byte at the kernel clock, so a board run can be
+compared directly against the 6.67 cyc/byte cosim prediction — a large gap
+means host/AXI overhead rather than a coder problem.
+
+### A decoder hardening this turned up
+
+Writing the host exposed a real bug. `mc_decode` took the per-chunk raw length
+straight from the container header and wrote that many bytes to the caller's
+buffer. Inside the test harness the header always came from our own encoder, so
+it was always sane — but the host reads it out of *device* memory, and a wrong
+xclbin (V5's, say) yields an arbitrary header. AddressSanitizer confirms the
+overflow on the unfixed code:
+
+```
+ERROR: AddressSanitizer: global-buffer-overflow in mc_decode_chunk(...)
+```
+
+`mc_decode` now validates the header before using it. Re-checked with 200,000
+random streams plus a deliberately V5-shaped header under ASan: all rejected,
+zero overruns, and the encoder output is unchanged.
+
+### Two things you must change
+
+**1. The decoder — this one will bite silently.** `board/host.cpp` carries its
+own `dec_kway()` and a comment saying the constants "must match the kernel /
+arith3.h". They no longer do, in two independent ways:
+
+| | V5 | V7 |
+|---|---|---|
+| container | `[K x uint16 comp_len]` | `[K x {uint16 raw_len, uint16 comp_len}]` |
+| termination | per-symbol continuation flag | raw length in the header |
+| model | 12-bit probability, `>>5` update | 6-bit state + MPS, ROM transitions |
+
+Running V5's `dec_kway()` on a V7 stream produces garbage and reports a
+round-trip mismatch — it will not tell you the decoder is the wrong one. Drop in
+[mcoder_dec.cpp](mcoder_dec.cpp) instead and call `mc_decode(out, clen, dec)`;
+it is standalone (no HLS headers) and already the reference the whole project
+is validated against.
+
+**2. The clock.** V7 closes at 6.0 ns, so the link step needs ~167 MHz, not
+V5's 200 MHz. Throughput projections in this README already account for that.
 
 ## Next steps
 

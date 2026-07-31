@@ -1,2 +1,4 @@
 build/
 hls/work_*/
+host/mc_host_sim
+host/mc_host_arm

@@ -42,11 +42,22 @@ int mc_decode_chunk(const mc_byte *in, int len, int n, mc_byte *out) {
 int mc_decode(const mc_byte *comp, int comp_len, mc_byte *out) {
     if (comp_len < MC_HDR_BYTES) return -1;
 
+    /*
+     * The header is untrusted here.  Inside the test harness it always came
+     * from our own encoder, but the XRT host reads it out of device memory, so
+     * a wrong xclbin -- V5's, say -- yields an arbitrary header.  rlen drives
+     * how many bytes get written to `out`, so it has to be validated before
+     * use or a bogus header overruns the caller's MC_MAX_IN buffer.
+     */
     int rlen[MC_KWAY], clen[MC_KWAY];
+    long total_raw = 0;
     for (int c = 0; c < MC_KWAY; c++) {
         rlen[c] =  comp[4 * c + 0] | (comp[4 * c + 1] << 8);
         clen[c] =  comp[4 * c + 2] | (comp[4 * c + 3] << 8);
+        if (rlen[c] < 0 || clen[c] < 0) return -1;
+        total_raw += rlen[c];
     }
+    if (total_raw > MC_MAX_IN) return -1;   /* would overrun `out` */
 
     int off = MC_HDR_BYTES, on = 0;
     for (int c = 0; c < MC_KWAY; c++) {
