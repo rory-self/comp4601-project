@@ -2,6 +2,8 @@
 
 #include <unordered_set>
 #include <chrono>
+#include <iostream>
+#include <iomanip>
 
 namespace {
 using Args = std::unordered_set<std::string_view>;
@@ -19,13 +21,19 @@ auto main(int argc, char* argv[]) -> int {
     const Payload input = generate_dummy_input();
 
     const auto start_time = Clock::now();
-    const auto encoded_result = arith_encode(input);
+    const std::vector<uint8_t> encoded_result = arith_encode(input);
     const auto end_time = Clock::now();
 
     if (args.contains("--timing")) {
-        const auto total_time = end_time - start_time;
-        // TODO print timing results for benchmarking
+        const auto total_time = static_cast<std::chrono::nanoseconds>(end_time - start_time);
+        std::cout << total_time.count() << " ns\n";
     }
+
+    // TODO temporary
+    for (const uint8_t byte : encoded_result) {
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << ' ';
+    }
+    std::cout << '\n';
 
     return 0;
 }
@@ -40,7 +48,7 @@ namespace {
 
     args.reserve(argc - 1);
 
-    for (std::size_t i = 1; i < argc; i++) {
+    for (std::size_t i = 1; i < static_cast<std::size_t>(argc); i++) {
         std::string_view arg(argv[i]);
         
         args.insert(arg);
@@ -56,7 +64,7 @@ namespace {
     dummy_bytes.reserve(num_dummy_bytes);
 
     for (std::size_t i = 0; i < num_dummy_bytes; i++) {
-        const std::byte dummy_byte = static_cast<std::byte>('a' + (i % 7));
+        const uint8_t dummy_byte = static_cast<uint32_t>('a' + (i % 7));
         dummy_bytes.push_back(dummy_byte);
     }
 
