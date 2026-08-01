@@ -1,0 +1,78 @@
+{
+  "0": {
+    "basicblocks": 28,
+    "calls": "1 1 1 1 1 1 1 1",
+    "control_depth": 0,
+    "def_use_depth": 4,
+    "file": "arith5.cpp",
+    "fileloc": 39,
+    "instructions": 158,
+    "loads": {
+      "G": 1,
+      "L": 11,
+      "T": 1
+    },
+    "memory_accesses": 10,
+    "name": "arith_encode",
+    "stores": {
+      "G": 1,
+      "L": 9,
+      "T": 3
+    },
+    "total_instructions": 6334
+  },
+  "1": {
+    "basicblocks": 26,
+    "calls": "2 2 2 3 3 3 3",
+    "control_depth": 1,
+    "def_use_depth": 3,
+    "file": "arith5.cpp",
+    "fileloc": 15,
+    "instructions": 127,
+    "loads": {
+      "L": 12
+    },
+    "memory_accesses": 9,
+    "name": "encode_chunk",
+    "stores": {
+      "L": 13
+    },
+    "total_instructions": 772
+  },
+  "2": {
+    "basicblocks": 27,
+    "calls": "3 3 3 3",
+    "control_depth": 1,
+    "def_use_depth": 4,
+    "file": "arith3.h",
+    "fileloc": 38,
+    "instructions": 103,
+    "loads": {
+      "L": 24
+    },
+    "memory_accesses": 8,
+    "name": "encode_bit",
+    "stores": {
+      "L": 12
+    },
+    "total_instructions": 187
+  },
+  "3": {
+    "basicblocks": 3,
+    "calls": "",
+    "control_depth": 0,
+    "def_use_depth": 3,
+    "file": "arith3.h",
+    "fileloc": 32,
+    "instructions": 21,
+    "loads": {
+      "L": 3
+    },
+    "memory_accesses": 0,
+    "name": "put_bit",
+    "stores": {
+      "L": 6
+    },
+    "total_instructions": 21
+  }
+}

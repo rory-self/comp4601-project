@@ -1,0 +1,9 @@
+# Inferred from syn.compile.pipeline_loops=64
+set_directive_pipeline encode_bit/VITIS_LOOP_50_1
+set_directive_pipeline encode_bit/VITIS_LOOP_53_2
+set_directive_pipeline encode_chunk/VITIS_LOOP_17_1
+set_directive_pipeline encode_chunk/VITIS_LOOP_33_5
+set_directive_pipeline encode_chunk/VITIS_LOOP_32_4
+set_directive_pipeline arith_encode/VITIS_LOOP_66_1
+set_directive_pipeline arith_encode/Header
+set_directive_pipeline arith_encode/VITIS_LOOP_89_2

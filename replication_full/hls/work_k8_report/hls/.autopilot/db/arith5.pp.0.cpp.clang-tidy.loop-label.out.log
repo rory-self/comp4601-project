@@ -1,0 +1,45 @@
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:422:13: remark: Added loop label VITIS_LOOP_50_1:   [xilinx-label-all-loops]
+            while (pending > 0) { put_bit(1, ob, nb, out, oi); pending--; }
+            ^
+            VITIS_LOOP_50_1: 
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:422:13: note: FIX-IT applied suggested code changes
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:425:13: remark: Added loop label VITIS_LOOP_53_2:   [xilinx-label-all-loops]
+            while (pending > 0) { put_bit(0, ob, nb, out, oi); pending--; }
+            ^
+            VITIS_LOOP_53_2: 
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:425:13: note: FIX-IT applied suggested code changes
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:449:5: remark: Added loop label VITIS_LOOP_17_1:   [xilinx-label-all-loops]
+    for (int i = 0; i < 256; i++) tree[i] = ((1u << 12) / 2);
+    ^
+    VITIS_LOOP_17_1: 
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:449:5: note: FIX-IT applied suggested code changes
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:453:5: remark: Added loop label VITIS_LOOP_21_2:   [xilinx-label-all-loops]
+    for (int k = 0; k < n; k++) {
+    ^
+    VITIS_LOOP_21_2: 
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:453:5: note: FIX-IT applied suggested code changes
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:456:9: remark: Added loop label VITIS_LOOP_24_3:   [xilinx-label-all-loops]
+        for (int j = 7; j >= 0; j--) {
+        ^
+        VITIS_LOOP_24_3: 
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:456:9: note: FIX-IT applied suggested code changes
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:464:88: remark: Added loop label VITIS_LOOP_32_4:   [xilinx-label-all-loops]
+    if (low < ((((uint32_t)((1u << 16) - 1)) + 1) / 4)) { put_bit(0, ob, nb, out, oi); while (pending > 0) { put_bit(1, ob, nb, out, oi); pending--; } }
+                                                                                       ^
+                                                                                       VITIS_LOOP_32_4: 
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:464:88: note: FIX-IT applied suggested code changes
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:465:41: remark: Added loop label VITIS_LOOP_33_5:   [xilinx-label-all-loops]
+    else { put_bit(1, ob, nb, out, oi); while (pending > 0) { put_bit(0, ob, nb, out, oi); pending--; } }
+                                        ^
+                                        VITIS_LOOP_33_5: 
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:465:41: note: FIX-IT applied suggested code changes
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:502:9: remark: Added loop label VITIS_LOOP_66_1:   [xilinx-label-all-loops]
+        for (int i = 0; i < len; i++) buf[c][i] = in[start + i];
+        ^
+        VITIS_LOOP_66_1: 
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:502:9: note: FIX-IT applied suggested code changes
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:525:9: remark: Added loop label VITIS_LOOP_89_2:   [xilinx-label-all-loops]
+        for (int i = 0; i < clen[c]; i++) out[oi++] = cout[c][i];
+        ^
+        VITIS_LOOP_89_2: 
+/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls/work_k8_report/hls/.autopilot/db/arith5.pp.0.cpp:525:9: note: FIX-IT applied suggested code changes

@@ -1,0 +1,1280 @@
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: ./arith3.h, Line: 49, Column: 13 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i
+Args:            
+  - Callee:          'put_bit(int, unsigned int&, int&, unsigned char*, int&)'
+    DebugLoc:        { File: ./arith3.h, Line: 32, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 22, Column: 9 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - Callee:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 32, Column: 59 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - Callee:          'put_bit(int, unsigned int&, int&, unsigned char*, int&)'
+    DebugLoc:        { File: ./arith3.h, Line: 32, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 77, Column: 19 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - Callee:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Passed
+Pass:            reflow-pragma-loop-unroll
+Name:            PragmaFullyUnroll
+DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Unrolling loop '''
+  - LoopName:        Encode_K
+  - String:          ''' ('
+  - LoopLoc:         'arith5.cpp:72:5'
+  - String:          ') '
+  - String:          'in function '''
+  - String:          arith_encode
+  - String:          ''' completely with a factor of '
+  - Factor:          '8'
+...
+--- !Failure
+Pass:            reflow-function-uniquification
+Name:            FunctionUniquification
+DebugLoc:        { File: arith5.cpp, Line: 26, Column: 13 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - String:          'Duplicating function '''
+  - Name:            'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int)'
+  - String:          ''' as different function signatures were detected between this call site and other call site(s). This may impact the resources used in the design.'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: ./arith3.h, Line: 49, Column: 13 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i
+Args:            
+  - Callee:          'put_bit(int, unsigned int&, int&, unsigned char*, int&)'
+    DebugLoc:        { File: ./arith3.h, Line: 32, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: ./arith3.h, Line: 49, Column: 13 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i.1
+Args:            
+  - Callee:          'put_bit(int, unsigned int&, int&, unsigned char*, int&)'
+    DebugLoc:        { File: ./arith3.h, Line: 32, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int) (.1)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 22, Column: 9 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - Callee:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 26, Column: 13 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - Callee:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int) (.1)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 32, Column: 59 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - Callee:          'put_bit(int, unsigned int&, int&, unsigned char*, int&)'
+    DebugLoc:        { File: ./arith3.h, Line: 32, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 77, Column: 19 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - Callee:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+Function:        apatb_arith_encode_ir
+Args:            
+  - Callee:          'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          apatb_arith_encode_ir
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Passed
+Pass:            reflow-inliner
+Name:            Inline
+DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i
+Args:            
+  - String:          'Inlining function '''
+  - Callee:          'put_bit(int, unsigned int&, int&, unsigned char*, int&)'
+    DebugLoc:        { File: ./arith3.h, Line: 32, Column: 0 }
+  - String:          ''' into '''
+  - Caller:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ''''
+...
+--- !Passed
+Pass:            reflow-inliner
+Name:            Inline
+DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i.1
+Args:            
+  - String:          'Inlining function '''
+  - Callee:          'put_bit(int, unsigned int&, int&, unsigned char*, int&)'
+    DebugLoc:        { File: ./arith3.h, Line: 32, Column: 0 }
+  - String:          ''' into '''
+  - Caller:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int) (.1)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ''''
+...
+--- !Passed
+Pass:            reflow-inliner
+Name:            Inline
+DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - String:          'Inlining function '''
+  - Callee:          'put_bit(int, unsigned int&, int&, unsigned char*, int&)'
+    DebugLoc:        { File: ./arith3.h, Line: 32, Column: 0 }
+  - String:          ''' into '''
+  - Caller:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ''''
+...
+--- !Failure
+Pass:            reflow-array-undecay
+Name:            WarnOnUnsupportedVLAUnDecay
+DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+Function:        _ZL12encode_chunkPKhiPh.clone
+Args:            
+  - String:          'Skipping array undecay on variable length array '''
+  - ArrayName:       out
+  - String:          '''.'
+...
+--- !Failure
+Pass:            reflow-array-undecay
+Name:            WarnOnUnsupportedVLAUnDecay
+DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+Function:        _ZL12encode_chunkPKhiPh.clone
+Args:            
+  - String:          'Skipping array undecay on variable length array '''
+  - ArrayName:       out
+  - String:          '''.'
+...
+--- !Failure
+Pass:            reflow-array-undecay
+Name:            WarnOnUnsupportedVLAUnDecay
+DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+Function:        _ZL12encode_chunkPKhiPh.clone
+Args:            
+  - String:          'Skipping array undecay on variable length array '''
+  - ArrayName:       out
+  - String:          '''.'
+...
+--- !Passed
+Pass:            reflow-array-partition
+Name:            ArrayXform
+DebugLoc:        { File: arith5.cpp, Line: 52, Column: 0 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Applying '
+  - String:          array_partition
+  - String:          ' to '''
+  - UOName:          _ZZ12arith_encodePKhiPhE4cout
+  - String:          ''':'
+  - String:          ' '
+  - Mode:            Complete
+  - String:          ' partitioning'
+  - String:          ' on dimension '
+  - Dim:             '1'
+  - String:          .
+...
+--- !Passed
+Pass:            reflow-array-partition
+Name:            ArrayXform
+DebugLoc:        { File: arith5.cpp, Line: 48, Column: 0 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Applying '
+  - String:          array_partition
+  - String:          ' to '''
+  - UOName:          _ZZ12arith_encodePKhiPhE3buf
+  - String:          ''':'
+  - String:          ' '
+  - Mode:            Complete
+  - String:          ' partitioning'
+  - String:          ' on dimension '
+  - Dim:             '1'
+  - String:          .
+...
+--- !Passed
+Pass:            reflow-array-partition
+Name:            ArrayXform
+DebugLoc:        { File: arith5.cpp, Line: 56, Column: 9 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Applying '
+  - String:          array_partition
+  - String:          ' to '''
+  - UOName:          clen
+  - String:          ''':'
+  - String:          ' '
+  - Mode:            Complete
+  - String:          ' partitioning'
+  - String:          ' on dimension '
+  - Dim:             '1'
+  - String:          .
+...
+--- !Passed
+Pass:            reflow-burst-inference
+Name:            BurstInferred
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Sequential '
+  - Direction:       read
+  - String:          ' of '
+  - Length:          variable
+  - String:          ' length'
+  - String:          ' has been inferred'
+  - String:          ' _XLX_SEP_ '
+  - AccessID:        scevgepseq
+  - ArrayName:       in
+  - String:          ' '
+  - BundleName:      gmem0
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:66:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      load
+    DebugLoc:        { File: arith5.cpp, Line: 66, Column: 68 }
+  - OrigDirection:   read
+  - OrigID:          for.inc.load.13
+...
+--- !Passed
+Pass:            reflow-burst-inference
+Name:            BurstInferred
+DebugLoc:        { File: arith5.cpp, Line: 83, Column: 5 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Sequential '
+  - Direction:       write
+  - String:          ' of length '
+  - Length:          '16'
+  - String:          ' has been inferred'
+  - String:          ' _XLX_SEP_ '
+  - AccessID:        out35seq
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        Header
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:83:5'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      store
+    DebugLoc:        { File: arith5.cpp, Line: 84, Column: 19 }
+  - OrigDirection:   write
+  - OrigID:          for.inc59.store.9
+  - OrigAccess:      store
+    DebugLoc:        { File: arith5.cpp, Line: 85, Column: 19 }
+  - OrigDirection:   write
+  - OrigID:          for.inc59.store.14
+...
+--- !Passed
+Pass:            reflow-burst-inference
+Name:            BurstInferred
+DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Sequential '
+  - Direction:       write
+  - String:          ' of '
+  - Length:          variable
+  - String:          ' length'
+  - String:          ' has been inferred'
+  - String:          ' _XLX_SEP_ '
+  - AccessID:        scevgep36seq
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_89_2
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:89:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      store
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 70 }
+  - OrigDirection:   write
+  - OrigID:          for.inc81.store.24
+...
+--- !Missed
+Pass:            reflow-burst-inference
+Name:            AccessInCondBranch
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Access '
+  - Access:          call
+    DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+  - String:          ' is in the conditional branch'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+  - OrigDirection:   read
+  - OrigID:          scevgepseq
+  - ArrayName:       in
+  - String:          ' '
+  - BundleName:      gmem0
+  - String:          ' '
+  - LoopName:        Split
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:63:5'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-inference
+Name:            AccessInCondBranch
+DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Access '
+  - Access:          call
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+  - String:          ' is in the conditional branch'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+  - OrigDirection:   write
+  - OrigID:          scevgep36seq
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        Concat
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:88:5'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-inference
+Name:            CouldNotAnalyzeBoundsPattern
+DebugLoc:        { File: ./arith3.h, Line: 47, Column: 5 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i
+Args:            
+  - String:          Could not analyze the loop bounds
+  - String:          ' _XLX_SEP_ '
+  - LoopName:        Renorm
+  - String:          ' '
+  - LoopLoc:         './arith3.h:47:5'
+  - String:          ' '
+  - Function:        'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-inference
+Name:            CouldNotAnalyzeBoundsPattern
+DebugLoc:        { File: ./arith3.h, Line: 47, Column: 5 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i.1
+Args:            
+  - String:          Could not analyze the loop bounds
+  - String:          ' _XLX_SEP_ '
+  - LoopName:        Renorm
+  - String:          ' '
+  - LoopLoc:         './arith3.h:47:5'
+  - String:          ' '
+  - Function:        'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int) (.1)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+  - OrigDirection:   write
+  - OrigID:          scevgep36seq
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_89_2
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:89:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Passed
+Pass:            reflow-burst-widen
+Name:            BurstWidened
+DebugLoc:        { File: arith5.cpp, Line: 83, Column: 5 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Sequential '
+  - Direction:       write
+  - String:          ' of '
+  - OrigLength:      '16'
+  - String:          ' x '
+  - OrigWords:       '8'
+  - String:          'bit words has been widened by '
+  - Factor:          '2'
+  - String:          ': '
+  - Length:          '8'
+  - String:          ' x '
+  - Words:           '16'
+  - String:          bit words
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 83, Column: 5 }
+  - OrigDirection:   write
+  - OrigID:          out35seq
+  - String:          ' _XLX_SEP_ '
+  - AccessID:        wseq
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        Header
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:83:5'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+  - OrigDirection:   read
+  - OrigID:          scevgepseq
+  - ArrayName:       in
+  - String:          ' '
+  - BundleName:      gmem0
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:66:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+  - OrigDirection:   write
+  - OrigID:          scevgep36seq
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_89_2
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:89:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Passed
+Pass:            reflow-burst-widen
+Name:            BurstWidened
+DebugLoc:        { File: arith5.cpp, Line: 83, Column: 5 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Sequential '
+  - Direction:       write
+  - String:          ' of '
+  - OrigLength:      '8'
+  - String:          ' x '
+  - OrigWords:       '16'
+  - String:          'bit words has been widened by '
+  - Factor:          '8'
+  - String:          ': '
+  - Length:          '1'
+  - String:          ' x '
+  - Words:           '128'
+  - String:          bit words
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 83, Column: 5 }
+  - OrigDirection:   write
+  - OrigID:          wseq
+  - String:          ' _XLX_SEP_ '
+  - AccessID:        wseq37
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        Header
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:83:5'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+  - OrigDirection:   read
+  - OrigID:          scevgepseq
+  - ArrayName:       in
+  - String:          ' '
+  - BundleName:      gmem0
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:66:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+  - OrigDirection:   write
+  - OrigID:          scevgep36seq
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_89_2
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:89:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+  - OrigDirection:   read
+  - OrigID:          scevgepseq
+  - ArrayName:       in
+  - String:          ' '
+  - BundleName:      gmem0
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:66:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+  - OrigDirection:   write
+  - OrigID:          scevgep36seq
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_89_2
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:89:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+  - OrigDirection:   read
+  - OrigID:          scevgepseq
+  - ArrayName:       in
+  - String:          ' '
+  - BundleName:      gmem0
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:66:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+  - OrigDirection:   write
+  - OrigID:          scevgep36seq
+  - ArrayName:       out
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_89_2
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:89:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-widen
+Name:            GreaterOrEqualAlignment
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Could not widen since type '
+  - Type:            i8
+  - String:          ' size is greater than or equal to alignment '
+  - Alignment:       '1'
+  - String:          '(bytes)'
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+  - OrigDirection:   read
+  - OrigID:          scevgepseq
+  - ArrayName:       in
+  - String:          ' '
+  - BundleName:      gmem0
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:66:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        VITIS_LOOP_50_1
+  - String:          '> at '
+  - LoopLoc:         './arith3.h:50:30'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: ./arith3.h, Line: 50, Column: 30 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i.1
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  encode_bit
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        VITIS_LOOP_50_1
+  - String:          ' '
+  - LoopLoc:         './arith3.h:50:30'
+    DebugLoc:        { File: ./arith3.h, Line: 50, Column: 30 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        VITIS_LOOP_53_2
+  - String:          '> at '
+  - LoopLoc:         './arith3.h:53:30'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: ./arith3.h, Line: 53, Column: 30 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i.1
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  encode_bit
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        VITIS_LOOP_53_2
+  - String:          ' '
+  - LoopLoc:         './arith3.h:53:30'
+    DebugLoc:        { File: ./arith3.h, Line: 53, Column: 30 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        VITIS_LOOP_50_1
+  - String:          '> at '
+  - LoopLoc:         './arith3.h:50:30'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: ./arith3.h, Line: 50, Column: 30 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  encode_bit
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        VITIS_LOOP_50_1
+  - String:          ' '
+  - LoopLoc:         './arith3.h:50:30'
+    DebugLoc:        { File: ./arith3.h, Line: 50, Column: 30 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        VITIS_LOOP_53_2
+  - String:          '> at '
+  - LoopLoc:         './arith3.h:53:30'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: ./arith3.h, Line: 53, Column: 30 }
+Function:        _ZL10encode_bitRjS_S_S_RiPhS0_S_i
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  encode_bit
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        VITIS_LOOP_53_2
+  - String:          ' '
+  - LoopLoc:         './arith3.h:53:30'
+    DebugLoc:        { File: ./arith3.h, Line: 53, Column: 30 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        VITIS_LOOP_17_1
+  - String:          '> at '
+  - LoopLoc:         'arith5.cpp:17:22'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: arith5.cpp, Line: 17, Column: 22 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  encode_chunk
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        VITIS_LOOP_17_1
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:17:22'
+    DebugLoc:        { File: arith5.cpp, Line: 17, Column: 22 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        VITIS_LOOP_33_5
+  - String:          '> at '
+  - LoopLoc:         'arith5.cpp:33:58'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: arith5.cpp, Line: 33, Column: 58 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  encode_chunk
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        VITIS_LOOP_33_5
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:33:58'
+    DebugLoc:        { File: arith5.cpp, Line: 33, Column: 58 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        VITIS_LOOP_32_4
+  - String:          '> at '
+  - LoopLoc:         'arith5.cpp:32:105'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: arith5.cpp, Line: 32, Column: 105 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  encode_chunk
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        VITIS_LOOP_32_4
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:32:105'
+    DebugLoc:        { File: arith5.cpp, Line: 32, Column: 105 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          '> at '
+  - LoopLoc:         'arith5.cpp:66:26'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  arith_encode
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:66:26'
+    DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        Header
+  - String:          '> at '
+  - LoopLoc:         'arith5.cpp:83:5'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: arith5.cpp, Line: 83, Column: 5 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  arith_encode
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        Header
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:83:5'
+    DebugLoc:        { File: arith5.cpp, Line: 83, Column: 5 }
+  - String:          ' '
+...
+--- !HLSReportInfo
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoLoopPipeline
+Args:            
+  - String:          'Pipelining loop< '
+  - LoopName:        VITIS_LOOP_89_2
+  - String:          '> at '
+  - LoopLoc:         'arith5.cpp:89:26'
+  - String:          ' due to pipeline_loops threshold'
+...
+--- !Passed
+Pass:            reflow-auto-loop-pipeline
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - PragmaType:      pipeline
+  - String:          ' '
+  - PragmaOptions:   ' '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  arith_encode
+  - String:          ' '
+  - PragmaInferReason: config_compile -pipeline_loops 64
+  - LoopName:        VITIS_LOOP_89_2
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:89:26'
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+  - String:          ' '
+...
+--- !Passed
+Pass:            reflow-loop-flatten-cost-model
+Name:            FlattenOffInference
+DebugLoc:        { File: arith5.cpp, Line: 21, Column: 22 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - String:          'Disabling loop flattening for loop '''
+  - LoopName:        VITIS_LOOP_21_2
+  - String:          '''.'
+...
+--- !Passed
+Pass:            reflow-loop-flatten-cost-model
+Name:            AutoParallelPerformanceDrivenVerbosePassed
+DebugLoc:        { File: arith5.cpp, Line: 21, Column: 22 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - PragmaType:      loop_flatten
+  - String:          ' '
+  - PragmaOptions:   'off '
+  - String:          ' '
+  - PragmaIsAuto:    '1'
+  - String:          ' '
+  - PragmaFunction:  encode_chunk
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_21_2
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:21:22'
+    DebugLoc:        { File: arith5.cpp, Line: 21, Column: 22 }
+  - String:          ' '
+...
+--- !Missed
+Pass:            reflow-burst-inference
+Name:            MismatchPortAndBurstAccessWidth
+DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          Inferred burst reverted due to burst accesses data width is different from m_axi port width
+  - String:          ' _XLX_SEP_ '
+  - OrigAccess:      call
+    DebugLoc:        { File: arith5.cpp, Line: 89, Column: 26 }
+  - OrigDirection:   write
+  - OrigID:          scevgep36seq
+  - ArrayName:       out_r
+  - String:          ' '
+  - BundleName:      gmem1
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Passed
+Pass:            reflow-burst-summary
+Name:            BurstInferredVerboseSummary
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Multiple burst '
+  - Direction:       reads
+  - String:          ' of '
+  - Length:          variable
+  - String:          ' length and bit width '
+  - Width:           '8'
+  - String:          ' has been inferred.'
+  - String:          ' These burst requests might be further partitioned into multiple requests during RTL generation, based on max_read_burst_length or max_write_burst_length settings.'
+  - String:          ' _XLX_SEP_ '
+  - AccessID:        seq
+  - ArrayName:       ''
+  - String:          ' '
+  - BundleName:      gmem0
+  - String:          ' '
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          ' '
+  - LoopLoc:         'arith5.cpp:66:26'
+  - String:          ' '
+  - Function:        'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' '
+...
+--- !Passed
+Pass:            reflow-burst-summary
+Name:            BurstInferredSummary
+DebugLoc:        { File: arith5.cpp, Line: 66, Column: 26 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - String:          'Multiple burst '
+  - Direction:       reads
+  - String:          ' of '
+  - Length:          variable
+  - String:          ' length and bit width '
+  - Width:           '8'
+  - String:          ' in loop '''
+  - LoopName:        VITIS_LOOP_66_1
+  - String:          '''('
+  - LoopLoc:         'arith5.cpp:66:26'
+  - String:          ')'
+  - String:          ' has been inferred on bundle '''
+  - BundleName:      gmem0
+  - String:          '''.'
+  - String:          ' These burst requests might be further partitioned into multiple requests during RTL generation, based on max_read_burst_length or max_write_burst_length settings.'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 22, Column: 9 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - Callee:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 26, Column: 13 }
+Function:        _ZL12encode_chunkPKhiPh
+Args:            
+  - Callee:          'encode_bit(unsigned int&, unsigned int&, unsigned int&, unsigned int&, int&, unsigned char*, int&, unsigned int&, int) (.1)'
+    DebugLoc:        { File: ./arith3.h, Line: 40, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...
+--- !Missed
+Pass:            inline
+Name:            NeverInline
+DebugLoc:        { File: arith5.cpp, Line: 77, Column: 19 }
+Function:        _Z12arith_encodePKhiPh
+Args:            
+  - Callee:          'encode_chunk(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 15, Column: 0 }
+  - String:          ' not inlined into '
+  - Caller:          'arith_encode(unsigned char const*, int, unsigned char*)'
+    DebugLoc:        { File: arith5.cpp, Line: 39, Column: 0 }
+  - String:          ' because it should never be inlined (cost=never)'
+...

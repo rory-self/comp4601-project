@@ -1,0 +1,33 @@
+Sat Aug  1 19:33:54 2026: Running xcd server. This server was built by gradle.
+Sat Aug  1 19:33:54 2026: Server was asked to start on port: '32881'
+Sat Aug  1 19:33:54 2026: Server is using token UUID: 'ccef8f79-ee87-4124-b8ed-5c34f0a30f50'
+Sat Aug  1 19:33:54 2026: SESSION_MGR: creating session with session uuid: '6d04a3e9-ade5-4ab9-8d63-1f78fcd2ec76' and name 'default'
+Sat Aug  1 19:33:54 2026: Attempting to start server on port '32881'
+Sat Aug  1 19:33:54 2026: XCD main fifo: created main fifo '/tmp/xcdmainccef8f79-ee87-4124-b8ed-5c34f0a30f50', fd read = 13
+Sat Aug  1 19:33:54 2026: Running Dispatch Server
+Sat Aug  1 19:33:54 2026: Version 2.2.0
+Sat Aug  1 19:33:56 2026: Dispatch Server: Accepted socket connection from client
+Sat Aug  1 19:33:56 2026: Starting Socket connection
+Sat Aug  1 19:33:56 2026: EXCHANGE_TOKEN received, server token: ccef8f79-ee87-4124-b8ed-5c34f0a30f50, passed token: ccef8f79-ee87-4124-b8ed-5c34f0a30f50
+Sat Aug  1 19:33:56 2026: DISPATCH_HANDLER: Adding handler from function makeHandler in library libxv_system_diagram
+Sat Aug  1 19:33:56 2026: SESSION_MGR: creating session with session uuid: 'ed89279c-b9eb-4b86-87ef-ab2d5ab3fcc5' and name 'v++_compile_work_k8_report'
+Sat Aug  1 19:33:56 2026: KERNEL_SVC: creating session with uuid: 'ed89279c-b9eb-4b86-87ef-ab2d5ab3fcc5' and name 'v++_compile_work_k8_report'
+Sat Aug  1 19:33:56 2026: GUIDANCE_SMGR: creating guidance session with uuid: 'ed89279c-b9eb-4b86-87ef-ab2d5ab3fcc5' and name 'v++_compile_work_k8_report'
+Sat Aug  1 19:33:56 2026: SYSTEM_DIAGRAM: creating session with uuid: 'ed89279c-b9eb-4b86-87ef-ab2d5ab3fcc5' and name 'v++_compile_work_k8_report'
+Sat Aug  1 19:34:00 2026: Dispatch Server: Accepted socket connection from client
+Sat Aug  1 19:34:00 2026: Starting Socket connection
+Sat Aug  1 19:34:12 2026: SESSION_MGR: closing session for UUID 'ed89279c-b9eb-4b86-87ef-ab2d5ab3fcc5' with name 'v++_compile_work_k8_report'
+Sat Aug  1 19:34:12 2026: KERNEL_SVC: closing session for UUID 'ed89279c-b9eb-4b86-87ef-ab2d5ab3fcc5' with name 'v++_compile_work_k8_report'
+Sat Aug  1 19:34:12 2026: GUIDANCE_SMGR: closing session for UUID 'ed89279c-b9eb-4b86-87ef-ab2d5ab3fcc5' with name 'v++_compile_work_k8_report'
+Sat Aug  1 19:34:12 2026: SYSTEM_DIAGRAM: closing session for UUID 'ed89279c-b9eb-4b86-87ef-ab2d5ab3fcc5' with name 'v++_compile_work_k8_report'
+Sat Aug  1 19:34:12 2026: STOP_SERVER received, server token: ccef8f79-ee87-4124-b8ed-5c34f0a30f50, passed token: ccef8f79-ee87-4124-b8ed-5c34f0a30f50
+Sat Aug  1 19:34:12 2026: Socket received request to stop server.
+Sat Aug  1 19:34:12 2026: Dispatch Server: do_await_stop
+Sat Aug  1 19:34:12 2026: Dispatch Server: stopping mainFifo_
+Sat Aug  1 19:34:12 2026: XCD main fifo: Stopping
+Sat Aug  1 19:34:12 2026: XCD main fifo: do_read error code: Operation canceled
+Sat Aug  1 19:34:12 2026: XCD main fifo: bytes_transferred: 0
+Sat Aug  1 19:34:12 2026: SERVER: destructor for server bound to port 32881
+Sat Aug  1 19:34:12 2026: XCD main fifo: Good unlink of /tmp/xcdmainccef8f79-ee87-4124-b8ed-5c34f0a30f50
+Sat Aug  1 19:34:12 2026: Server exiting with status 0.
+Sat Aug  1 19:34:12 2026: Closing log file.
