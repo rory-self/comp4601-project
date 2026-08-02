@@ -25,7 +25,7 @@ results/ synth_results.md, onfabric_result.txt, arm_baseline.txt,
 
 ## Build & run
 ```sh
-source ../env.sh
+source ../../env.sh
 
 # 1. software round-trip + the CPU baseline
 cd test
@@ -50,7 +50,7 @@ cd ../src
 "$CXX_ARM" $ARM_CXXFLAGS -I. demo_host.cpp arith5.cpp -DKWAY=8 -o ../bin/demo_arm $ARM_LDFLAGS
 
 # 5. run
-cd .. && ../run_on_board.sh rep
+cd .. && ../../run_on_board.sh rep
 ```
 
 ## Visual demo (both implementations on one screen)

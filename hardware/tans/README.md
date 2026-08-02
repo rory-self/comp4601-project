@@ -27,7 +27,7 @@ results/ hls_results.md, software_results.md, onfabric_result.txt
 
 ## Build & run
 ```sh
-source ../env.sh                       # Vitis, platform, sysroot, ARM compiler
+source ../../env.sh                       # Vitis, platform, sysroot, ARM compiler
 
 # 1. software round-trip + CPU speed
 cd test && g++ -O3 -march=native -Wno-unknown-pragmas -DKWAY=1 \
@@ -49,7 +49,7 @@ v++ --link --target hw --platform "$PLATFORM" --config link.cfg \
 cd ../src && "$CXX_ARM" $ARM_CXXFLAGS -I. demo_host.cpp -o ../bin/demo_host_arm $ARM_LDFLAGS
 
 # 5. run on the board
-cd .. && ../run_on_board.sh tans      # or: ../run_on_board.sh multi
+cd .. && ../../run_on_board.sh tans      # or: ../../run_on_board.sh multi
 ```
 
 ## Note on the table

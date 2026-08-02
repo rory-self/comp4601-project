@@ -31,7 +31,7 @@ results/ hls_results.md, onfabric_result.txt, 400mhz_attempt.md, how_it_works.md
 
 ## Build & run
 ```sh
-source ../env.sh
+source ../../env.sh
 
 # 1. software round-trip (ap_int.h compiles under g++, so this is the exact RTL maths)
 cd src && g++ -O2 -Wno-unused-label -Wno-unknown-pragmas -I"$VITIS_INCLUDE" \
@@ -55,7 +55,7 @@ cd ../src
     ../../replication_full/src/arith5.cpp -DKWAY=1 -o ../bin/demo_host_arm $ARM_LDFLAGS
 
 # 5. run
-cd .. && ../run_on_board.sh interleaved
+cd .. && ../../run_on_board.sh interleaved
 ```
 
 `results/400mhz_attempt.md` records a negative result: the one variant with an HLS

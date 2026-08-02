@@ -49,7 +49,7 @@ usage(){
 run_one(){
   local key="$1" spec dir bit host extra args
   spec="$(find_design "$key")" || { echo "unknown design '$key'"; return 1; }
-  dir="$HERE/$(field "$spec" 2)"
+  dir="$HERE/hardware/$(field "$spec" 2)"
   bit="$dir/$(field "$spec" 3)"; host="$dir/$(field "$spec" 4)"
   extra="$(field "$spec" 5)";    args="$(field "$spec" 6)"; args="${args//ITERS/$ITERS}"
 
