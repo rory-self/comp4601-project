@@ -7,7 +7,7 @@ schedule the coding loop at aggregate **II=1** *and* raise the clock.
 `GROUPS=4` is the shipped configuration (recurrence distance 4).
 
 **Measured:** II=1, Fmax 293 MHz standalone / 274 MHz as the board top, **18% LUT**
-(vs 71% for equivalent replication). The design used 23,251 LUTs, 6 DSPs and 50 BRAMs. On the KV260: **11.7 M sym/s**, ARM 3.47 →
+(vs 71% for equivalent replication). The design uses 23,251 LUTs, 6 DSPs and 50 BRAMs. On the KV260: **11.7 M sym/s**, ARM 3.47 →
 **3.35×**, lossless.
 
 > Why fabric (11.7) is below co-simulation (31 M/s): the platform offers only fixed
