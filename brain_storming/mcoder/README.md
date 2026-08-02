@@ -5,21 +5,22 @@ Iteration 3 of the arithmetic coder. Same algorithm class as
 coding over an 8-level bit-tree, K independent streams — with the interval
 arithmetic swapped for the H.264/AVC CABAC "M-coder" engine.
 
-**Status: Phase 1 and Phase 2 complete.** The kernel synthesises with **II=1 on
-the coding loop, zero timing violations, and zero DSPs**, and C/RTL
-co-simulation passes losslessly. It closes at **6.0 ns (167 MHz)**, not the
-5 ns V5 uses — see [Timing](#phase-2--hls-port). Phase 3 (K sweep) results are
-in `results/mcoder_hls_sweep.csv`.
+**Status: complete and MEASURED ON FABRIC.** K=8 on the KV260 PL at 200 MHz:
+**31.12 M symbols/s = 9.0x the ARM A53 and 2.34x V5**, losslessly, with **zero
+DSPs** and post-route **WNS +0.754 ns**. Output is also 1.5% smaller than V5's.
+Full numbers in [MEASURED ON FABRIC](#measured-on-fabric).
 
 Two things worth knowing up front:
 
 - **V6 never closed timing.** `pipelined_hls/arith6.cpp` sits at **−1.77 ns with
   4 DSPs and 25% LUT**, and its commit says so ("improving timing violation(not
-  solved)"). The last design that closed timing and ran on the board is V5, at
+  solved)"). The last design that closed timing and ran on the board was V5, at
   83.7 cycles/byte. V7 beats V6 on timing, area, and throughput at once.
-- **The 6.0 ns clock is a deliberate trade**, chosen over spending more effort
-  to reach 5 ns. At 8 cycles/byte and 167 MHz the coder is still far ahead of
-  V5's 83.7 cycles/byte at 200 MHz.
+- **The 6.0 ns HLS constraint does not set the hardware clock.** The KV260
+  platform exposes only fixed clocks (100/200/400 MHz), so the kernel runs at
+  200 MHz regardless; `clock=6.0ns` only steers HLS scheduling. Sections below
+  written as though 6.0 ns meant 167 MHz were wrong about that — the fabric
+  result and post-route report are the authority.
 
 ## Why this is faster
 
@@ -129,16 +130,22 @@ points**. The M-coder pays **+7.7 points** over the same range, about 30% less.
 At the K=8 operating point the M-coder is **5.1% smaller than V5 while also
 being faster**.
 
-The one place the M-coder loses badly is highly skewed data (figures from the
-`make isolate` build, so bin structure is identical and only the engine differs):
+The one place the M-coder loses is highly skewed data (figures from the
+`make isolate` build, so bin structure is identical and only the engine
+differs).  Read the last column carefully -- the relative deltas are large but
+they sit on top of outputs that are already tiny:
 
-| case | V5 | M-coder | delta |
-|---|---|---|---|
-| all-zero (4 KB) | 2.03% | 3.81% | **+87.9%** |
-| repetitive | 22.71% | 24.66% | +8.6% |
-| alternating | 15.14% | 16.48% | +8.9% |
-| text | 59.40% | 60.45% | +1.8% |
-| random | 101.32% | 102.00% | +0.7% |
+| case | V5 | M-coder | delta (relative) | delta (% of input) |
+|---|---|---|---|---|
+| all-zero (4 KB) | 2.03% | 3.81% | +87.9% | **+1.78 pp** (83 -> 156 B) |
+| repetitive | 22.71% | 24.66% | +8.6% | +1.95 pp |
+| alternating | 15.14% | 16.48% | +8.9% | +1.34 pp |
+| text | 59.40% | 60.45% | +1.8% | +1.05 pp |
+| random | 101.32% | 102.00% | +0.7% | +0.68 pp |
+
+So the worst case costs under 2 percentage points of the input size, and it
+costs it where both coders are already compressing 26-49x.  "+88%" is the
+honest relative figure but a misleading headline.
 
 This is a real, structural property, not a bug — and it doubles as evidence the
 tables are correct. CABAC floors p_LPS at 0.01875 (state 62; state 63 is the
@@ -168,6 +175,7 @@ real ratio there. On the demo image and on text it does not.
 | [hls/mcoder_board.cpp](hls/mcoder_board.cpp) | board top-level, signature-compatible with V5's `arith_kernel` |
 | [hls/hls_board.cfg](hls/hls_board.cfg) | board build → `arith_kernel.xo` |
 | [host/mc_host.cpp](host/mc_host.cpp) | XRT host — links the real decoder, `-f` for real data, `make sim` for a boardless test |
+| [demo/mc_demo.cpp](demo/mc_demo.cpp) | image demo — ASCII previews, CPU-vs-FPGA byte check, `make sim` for a boardless run |
 
 Counters compile out entirely without `-DMC_PROFILE`, so the HLS build never
 sees them.
@@ -340,6 +348,61 @@ So the algorithm work is done, and further speedup is a *memory-path* problem,
 not a coder problem: widen `gmem` (the interface reports `8 -> 8` with
 `Max Widen Bitwidth 512` available), or stream input straight into the K coders
 instead of staging through `buf[][]`.
+
+### MEASURED ON FABRIC
+
+KV260 PL, K=8, 4095 symbols, 2000 iterations, chrono around kernel
+enqueue+wait only — identical parameters and host structure to V5's
+[onfabric_result.txt](../board/onfabric_result.txt), so this is a like-for-like
+comparison.
+
+| | V5 (measured) | **V7 (measured)** |
+|---|---|---|
+| per call | 308.19 us | **131.59 us** |
+| per symbol | 75.26 ns | **32.13 ns** |
+| throughput | 13.29 M sym/s | **31.12 M sym/s** |
+| vs ARM A53 (3.46 M sym/s) | 3.84x | **9.0x** |
+| compressed size | 1712 B (41.8%) | **1687 B (41.2%)** |
+| clock | 200 MHz | 200 MHz |
+| LUT / BRAM / DSP | 43573 (37%) / 26 / **48** | 41797 (35%) / 42 / **0** |
+
+**2.34x V5 on fabric, with 1.5% smaller output and all 48 DSPs freed.**
+
+At 200 MHz, 131.59 us is 26,317 cycles for 4095 bytes = **6.43 cycles/byte**,
+against cosim's 6.67 — agreement within 3.6%, the same margin V5 reported
+between its cosim and fabric numbers.
+
+### It runs at 200 MHz, not 167 — the clock fallback was never needed
+
+Worth correcting, because the earlier reasoning in this file was wrong about
+what the 6.0 ns constraint does. The KV260 platform exposes only **fixed**
+clocks (100 / 199.998 / 400 MHz), so `clock=6.0ns` never set the hardware
+clock at all — it only steered HLS scheduling. The kernel is clocked at
+**5.000 ns**, and post-route timing closes with room:
+
+```
+WNS 0.754 ns   TNS 0.000   0 failing endpoints of 71960
+```
+
+So HLS's -0.61 ns estimate at 5 ns was pessimistic — it reserves 12.5% clock
+uncertainty and estimates routing before placement. The real path is 3.996 ns
+with **2 logic levels**, 56% of it routing. Choosing 6.0 ns cost nothing, but it
+was not the thing that made this work.
+
+The post-route critical path is also informative: it lands in
+`mc_encode_Pipeline_VITIS_LOOP_273_2` — the `Concat` output copy loop — **not**
+in the coder.
+
+### Where the time actually goes
+
+At K=8 a 4095-byte buffer splits into 512-byte chunks, so the coder does
+512 x 8 = **4096 cycles** of the measured 26,317. The coder is **15.6% of the
+runtime**; the other 84% is moving bytes.
+
+That is the whole story of this iteration in one number. The engine got ~10x
+faster (83.7 -> 8 cycles/byte single-stream) and the system got 2.34x, because
+the bottleneck moved to the byte-wide `m_axi` copies, which do not divide by K.
+It is also why K=16 fits after the LUTRAM change yet runs *slower*.
 
 ### Projected throughput
 
@@ -544,6 +607,44 @@ is validated against.
 
 **2. The clock.** V7 closes at 6.0 ns, so the link step needs ~167 MHz, not
 V5's 200 MHz. Throughput projections in this README already account for that.
+
+## Image-compression demo
+
+[demo/mc_demo.cpp](demo/mc_demo.cpp) — the visual demo, same structure as the
+V5 demo (`../demo/demo_host.cpp`) so the two are directly comparable.
+
+```
+cd demo
+make sim                          # rehearse with no board attached
+make SYSROOT=<xrt-sysroot>        # -> mc_demo_arm
+# on the board (needs mcoder.bin + image.pgm in the same directory):
+./mc_demo_arm -i image.pgm -x mcoder.bin
+```
+
+It loads a P5 `.pgm`, compresses it in 4 KB blocks on **both** the ARM CPU and
+the FPGA, decodes the FPGA's bytes back on the CPU, and prints ASCII previews of
+the original and the reconstruction plus a stats table. Writes
+`reconstructed.pgm`.
+
+Three things it checks, in increasing strength:
+
+1. **lossless** — reconstruction is pixel-perfect
+2. **CPU vs FPGA bytes IDENTICAL** — the hardware implements the *same*
+   algorithm, not merely a self-consistent one. A kernel with a subtly wrong
+   context update would still decode its own output; it would not match the
+   software model bit-for-bit.
+3. it links `../mcoder_enc.cpp` / `../mcoder_dec.cpp` rather than copying the
+   model constants, so the check cannot be defeated by both sides drifting
+   together
+
+Measured on the 256x256 demo image: 65536 -> 40406 bytes (**61.7%, 1.62x**),
+pixel-perfect.
+
+**Careful with which speedup you quote.** The demo reports FPGA vs *ARM running
+the same M-coder* — that is the "what did acceleration buy" number (~9x). It is
+a different comparison from the 2.34x vs V5 on fabric, which is "what did
+iteration 3 buy over the previous accelerator". Both are real; they are not the
+same claim.
 
 ## Next steps
 

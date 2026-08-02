@@ -7,7 +7,8 @@
 
 K        ?= 8
 CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -Wno-unknown-pragmas -Wno-unused-label
-DEFS      = -DMC_KWAY=$(K)
+# -I.. resolves "mcoder.h"; MC_KWAY must match the kernel build.
+DEFS      = -DMC_KWAY=$(K) -I..
 
 SRC  = mc_host.cpp ../mcoder_dec.cpp
 SIM_SRC = $(SRC) ../mcoder_enc.cpp

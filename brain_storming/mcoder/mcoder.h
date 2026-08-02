@@ -3,47 +3,6 @@
 #include <stdint.h>
 #include "mcoder_tables.h"
 
-/*
- * M-coder (H.264 CABAC arithmetic coding engine), K-way multi-stream.
- *
- * Drop-in replacement for the V5 exact coder (best_hls/arith3.h + arith5.cpp).
- * Same algorithm class -- adaptive binary arithmetic coding over an 8-level
- * bit-tree -- but three things change, and all three are why it is faster:
- *
- *   1. Interval split: V5 computes  split = (range * prob) >> 12, a 17x12
- *      multiply on the critical path.  Here it is  rLPS = ROM[state][qIdx],
- *      one 256-byte table read.  No multiplier, no DSP, no divide.
- *
- *   2. Renormalisation: V5 runs a data-dependent  while (needs shift)  loop
- *      (bounded at 32 trips) that shifts by one bit per iteration.  Here there
- *      is no loop at all: the range update is a single barrel shift, and the
- *      eight possible bit-emit classifications are produced in parallel by a
- *      prefix-AND (see mc_renorm_low).  Fixed latency, so the coding loop
- *      pipelines at II=1.
- *
- *   3. Model update: V5 does  prob += (4096 - prob) >> 5  /  prob -= prob >> 5.
- *      Here it is  state = ROM[state], two 64-byte tables.  Context state
- *      shrinks from a 12-bit probability to a 6-bit state index plus a 1-bit
- *      MPS value -- 7 bits per context instead of 12, so the 256-entry context
- *      array halves in size and partitions more cheaply.
- *
- * Cost: the ROM quantises probability to 64 states and range to 4 buckets, so
- * compression is slightly worse than the exact coder.  Measured loss is
- * reported by mcoder_test.
- *
- * Container format (little-endian), matching V5's spirit but self-terminating
- * on an explicit raw length instead of a per-symbol continuation flag:
- *
- *   [ K x { uint16 raw_len, uint16 comp_len } ][ chunk 0 ][ chunk 1 ] ...
- *
- * Dropping the continuation flag takes the bin count from 9 bins/byte (V5) to
- * 8 bins/byte, an 11% cut that is independent of the engine change.  Building
- * with -DMC_TERM_FLAG restores V5's per-symbol continuation flag (and drops the
- * raw length from the header), which makes the bin structure identical to V5
- * and so isolates what the ROM quantisation alone costs.  The test reports
- * both, so the two effects never get conflated.
- */
-
 #define MC_MAX_IN    4096
 #define MC_MAX_OUT   8192
 
@@ -110,47 +69,7 @@ static inline int mc_shift_of(uint32_t range) {
     return 7;                       /* range == 2 or 3 */
 }
 
-/* ================================================================== *
- * Encoder
- * ================================================================== */
 
-/*
- * The engine is split into two halves that share nothing but a token.
- *
- *   mc_code_bin()      owns low/range/context.  Fixed latency: a ROM read, a
- *                      subtract, a barrel shift and a prefix-AND.  No output,
- *                      no carry state, no variable-trip loop -- so it
- *                      pipelines at II=1.  This is what the kernel's coding
- *                      stage calls.
- *
- *   mc_pack_steps()    owns the deferred-carry count and the byte packer.
- *                      Variable latency, because emitting a deferred run of
- *                      length m costs bytes on the output port.
- *
- * Only the packer differs between software and hardware.  The software one
- * below packs a whole token immediately, which is simplest to read and is what
- * the Phase 1 corpus validates.  The kernel flattens the same work into a
- * pipelined one-unit-per-cycle loop (hls/mcoder_hls.cpp) because nested
- * variable-trip loops cost ~10 cycles of loop control per step in hardware.
- * Both consume the identical token stream and emit the identical bits.
- *
- * Why split it this way: draining a deferred run is unbounded work, and any
- * variable-trip loop inside the coding loop stops HLS pipelining it (measured:
- * 128 cycles/bin when the drain sat inline).  The two halves cannot simply be
- * put in separate pipeline stages either, because one bin can emit several
- * runs, and several stream writes per iteration force II > 1.
- *
- * The way out is that the packer never needs `low`.  What each renorm step
- * emits is fully determined by its *classification* -- E1 emits a 0 then
- * drains, E2 emits a 1 then drains, E3 defers one bit -- so the classification
- * of a bin's <=8 steps is a fixed-width token (3 bits of count, 2 bits per
- * step) and the packer can maintain `outstanding` on its own.  One token per
- * bin, one stream write, II=1.
- *
- * Both the software path (mc_encode_bin, immediate packing) and the HLS
- * dataflow kernel are built from these same two primitives, so the Phase 1
- * round-trip corpus validates exactly the decomposition the hardware uses.
- */
 #define MC_E1  0u   /* low <  1/4  -> emit 0, then drain the deferred run */
 #define MC_E2  1u   /* low >= 1/2  -> emit 1, then drain the deferred run */
 #define MC_E3  2u   /* straddles   -> defer one more bit                   */
@@ -159,65 +78,10 @@ typedef struct {
     uint32_t cls;   /* 2 bits per step, step i at bits [2i+1:2i] */
     int      s;     /* number of valid steps, 0..8               */
 } mc_steps;
-
-/*
- * RenormE, bin-stage half: fixed LZC + barrel shift + fixed 8-deep classify.
- * Mutates low and range; produces the token.  This is the whole hot path, and
- * the 8-deep chain on `low` is the critical path of the entire design.
- *
- * Written as bit manipulation rather than arithmetic, deliberately.  The
- * obvious form -- compare against QUARTER/HALF, subtract, shift -- reads
- * better but synthesises to a chain of eight 32-bit comparators, subtractors
- * and selects, because low/range are plain uint32_t loop-carried state and
- * Vitis cannot prove the 10-bit bound through the phi merges.  Measured at
- * 18.5 ns against a 5 ns budget.  (arith6.cpp hit the same width-inference
- * wall on its multiply and papered over it with mask hints.)
- *
- * So the bounds are made explicit instead.  low is 10 bits and range 9, and
- * one step reduces to: test bit 9, shift left, mask.  Both the classification
- * and the update are pure bit tests:
- *
- *   b9=1        (low >= HALF)     -> E2.  Subtracting HALF clears bit 9, which
- *                                   the shift drops anyway, so mask 0x3FF.
- *   b9=0, b8=1  (straddle)        -> E3.  Subtracting QUARTER clears bit 8, so
- *                                   the new bit 9 must be forced to 0: 0x1FF.
- *   b9=0, b8=0  (low <  QUARTER)  -> E1.  Result is already < 512, so 0x1FF is
- *                                   a no-op and the mask need not be selected.
- *
- * which collapses the update to  L = (L << 1) & (b9 ? 0x3FF : 0x1FF)  -- one
- * bit test, one shift, one 2-way mask per step.
- */
 #define MC_LOW_MASK    0x3FFu           /* low   is 10 bits: [0, 1022] */
 #define MC_RANGE_MASK  0x1FFu           /* range is  9 bits: [2, 510]  */
 
-/*
- * Classify the s shifted-out bit positions of low.  s comes from the caller,
- * because the two callers derive it differently -- see mc_code_bin.
- *
- * Solved in closed form rather than iterated.  The step recurrence is
- *
- *     L' = (L << 1) & (b9(L) ? 0x3FF : 0x1FF)
- *
- * (E2 clears bit 9, which the shift drops anyway; E3 clears bit 8, so the new
- * bit 9 must be forced to 0; E1's result is already < 512).  Written as eight
- * sequential steps that is eight levels of shift-mask-select, and synthesis
- * measured the resulting path at 5.79 ns against a 5 ns budget.
- *
- * But the recurrence unrolls.  The mask only ever touches bit 9, so the low
- * nine bits are just the original bits shifted:
- *
- *     L_i[8:0] = (L_0 << i) & 0x1FF
- *
- * and bit 9 follows b9(L_i) = b9(L_{i-1}) & b8(L_{i-1}), where b8(L_{i-1}) is
- * itself the original bit L_0[9-i].  Expanding that gives a prefix-AND:
- *
- *     L_i[9] = L_0[9] & L_0[8] & ... & L_0[9-i]
- *
- * So every step's classification is a function of two *original* bits -- the
- * prefix-AND up to i, and the constant-position bit L_0[8-i] -- and all eight
- * fall out of one depth-3 AND tree plus fixed wiring, in parallel.  The only
- * remaining shift is a single barrel shift by s.
- */
+
 static inline mc_steps mc_renorm_low(uint32_t *low, int s) {
     mc_steps r;
     r.s = s;
@@ -252,14 +116,6 @@ static inline mc_steps mc_renorm_classify(uint32_t *low, uint32_t *range) {
     return mc_renorm_low(low, s);
 }
 
-/*
- * The three bits the H.264 flush writes after the final renorm:
- *   PutBit((low >> 9) & 1), then WriteBits(((low >> 7) & 3) | 1, 2).
- * The low bit of that 2-bit literal is always 1.  The two literals need no
- * drain, but encoding them as E1/E2 is harmless because the PutBit ahead of
- * them has already emptied `outstanding`.  So the flush tail is just three
- * more ordinary steps and needs no extra token kind.
- */
 static inline mc_steps mc_flush_tail(uint32_t low) {
     mc_steps r;
     r.s = 3;
@@ -326,16 +182,7 @@ Carry:
     p->outstanding = 0;
 }
 
-/*
- * Expand one classification token into output bits.
- *
- * Bounded by st.s, not by 8.  The packer does not need II=1, but it does need
- * a low *average* cost, and a fixed 8-trip loop costs 8 whether or not the
- * steps are live -- synthesis estimated the packer at 2.76M cycles against the
- * coder's 33k on that basis.  Tokens are only pushed when s > 0, and the
- * measured average is ~1.07 steps per token, so bounding by s makes the packer
- * roughly 0.6 cycles per bin and it stops being the bottleneck.
- */
+
 static inline void mc_pack_steps(mc_pack *p, mc_steps st) {
 Steps:
     for (int i = 0; i < st.s; i++) {
@@ -368,15 +215,7 @@ static inline void mc_enc_init(mc_enc *e, mc_byte *out) {
     mc_pack_init(&e->pk, out);
 }
 
-/*
- * EncodeDecision (H.264 9.3.4.2): the hot path, and the whole of what the
- * hardware coding loop does.  One ROM read for the interval split, one
- * subtract, one conditional add, one ROM read for the state update, then the
- * fixed-latency renorm classify.  No multiply, no variable-trip loop.
- *
- * Kept separate from the packer so the HLS bin stage can call exactly this and
- * push the returned token, rather than duplicating the arithmetic.
- */
+
 static inline mc_steps mc_code_bin(uint32_t *low, uint32_t *range,
                                    mc_ctx *cs, int bin) {
     unsigned st  = (unsigned)(*cs >> 1);
@@ -388,27 +227,7 @@ static inline mc_steps mc_code_bin(uint32_t *low, uint32_t *range,
     unsigned q   = (*range >> 6) & 3u;
     uint32_t rlps = MC_RLPS(rw, q);
 
-    /*
-     * Both candidate ranges and both normalisations are computed in parallel
-     * and selected at the end, rather than selecting the range first and
-     * normalising after.  Selecting first puts subtract -> priority encoder ->
-     * barrel shift in series on the loop-carried path; synthesis measured that
-     * at 4.62 ns against a 5 ns budget.
-     *
-     * The MPS side needs neither the encoder nor the shifter, because its
-     * renorm is provably 0 or 1 bits.  q partitions range into
-     * [256,319] [320,383] [384,447] [448,511], and rLPS is largest at state 0,
-     * so the smallest possible rM = range - rLPS per quantile is
-     *     256-128=128,  320-176=144,  384-208=176,  448-240=208,
-     * all >= 128.  A 9-bit value >= 128 needs at most one doubling to reach
-     * 256, so sM is just "is bit 8 clear".
-     *
-     * The LPS side's range is rlps itself, which does not depend on the
-     * subtract at all, so its normalisation runs concurrently with it.
-     */
-    /* low + rM == low + range - rlps.  Forming (low + range) up front lets the
-     * adder run concurrently with the ROM mux instead of queueing behind the
-     * subtract, which removes one adder level from the loop-carried path. */
+    
     uint32_t lr = *low + *range;                        /* 11 bits */
 
     uint32_t rM = (*range - rlps) & MC_RANGE_MASK;      /* MPS range */

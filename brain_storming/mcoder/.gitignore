@@ -2,3 +2,6 @@ build/
 hls/work_*/
 host/mc_host_sim
 host/mc_host_arm
+demo/mc_demo_arm
+demo/mc_demo_sim
+demo/reconstructed.pgm
