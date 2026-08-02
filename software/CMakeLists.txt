@@ -10,9 +10,11 @@ set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
 add_library(coderlib
     src/buffer.cpp
+    src/input_buffer.cpp
     src/encoder.cpp
     src/frequency_table.cpp
     src/arith.cpp
+    src/decoder.cpp
 )
 target_include_directories(coderlib PRIVATE ${INCLUDE_DIR})
 target_compile_options(coderlib PRIVATE -Wall)
