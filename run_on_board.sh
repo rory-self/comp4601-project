@@ -23,10 +23,10 @@ bscp(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w scp "${SSHOPT[
 
 # ---- design registry:  key | dir | bitstream | host binary | extra files | args
 designs=(
-  "rep|replication_full|board/arith.bin|board/arith_host_arm||-N 4095 -n ITERS"
-  "interleaved|interleaved|board/arith.xclbin|board/demo_host_arm||-N 4095 -n ITERS"
-  "tans|tans|board/arith.xclbin|board/tans_host_arm|demo/file0.bin demo/file1.bin demo/file2.bin demo/file3.bin|-d /tmp -n 200"
-  "multi|tans|board/arith_multi.xclbin|board/multi_host_arm|demo/file0.bin|-d /tmp -n 300"
+  "rep|replication_full|bin/arith.bin|bin/arith_host_arm||-N 4095 -n ITERS"
+  "interleaved|interleaved|bin/arith.xclbin|bin/demo_host_arm||-N 4095 -n ITERS"
+  "tans|tans|bin/arith.xclbin|bin/tans_host_arm|data/file0.bin data/file1.bin data/file2.bin data/file3.bin|-d /tmp -n 200"
+  "multi|tans|bin/arith_multi.xclbin|bin/multi_host_arm|data/file0.bin|-d /tmp -n 300"
 )
 declare -A DESC=(
   [rep]="arith, K=8 replicated        (iteration 1, the first fabric design)"
@@ -57,7 +57,7 @@ run_one(){
   echo " $key -- ${DESC[$key]}"
   echo "=============================================================="
   for f in "$bit" "$host"; do
-    [ -f "$f" ] || { echo "  MISSING: $f"; echo "  (build it first -- see $dir/DEMO.md)"; return 1; }
+    [ -f "$f" ] || { echo "  MISSING: $f"; echo "  (build it first -- see $dir/README.md)"; return 1; }
   done
 
   echo "-- deploying $(basename "$bit") + $(basename "$host")"
@@ -100,7 +100,7 @@ if [ "$1" = "all" ]; then
   echo "=============================================================="
   echo "Note: speedups are vs each design's OWN software baseline, and those"
   echo "baselines differ (bit-wise arith 3.5 M/s vs byte-wise tANS 56 M/s),"
-  echo "so compare THROUGHPUT across rows, not the ratios. See DEMO_CHEATSHEET.md."
+  echo "so compare THROUGHPUT across rows, not the ratios."
 else
   run_one "$1"
 fi
