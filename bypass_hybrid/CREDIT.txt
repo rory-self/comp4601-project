@@ -1,5 +1,0 @@
-mcoder.h and mcoder_tables.h are Bryan Bong's M-coder (H.264/CABAC) engine,
-from branch m_coderbb (brain_storming/mcoder/). They are included here only as
-the arithmetic engine that the entropy-classified hybrid coder drives; the
-classifier idea, the hybrid encoder/decoder and all measurements in RESULTS.md
-are our own work.

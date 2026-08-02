@@ -14,7 +14,7 @@ ARM Cortex-A53 baselines measured on the board: adaptive arith coder
 
 ## Part 1 — Workload classifiers (measured on our actual test data)
 
-`workload_profile/` contains the two profilers. The second is the important one:
+the workload profilers (branch `sadat-brainstorming`) contains the two profilers. The second is the important one:
 for a bit-tree coder, what decides whether a bin is worth modelling is its
 **conditional** entropy given its context, not its marginal entropy.
 
@@ -181,7 +181,7 @@ micro-optimisation inside the kernel. BRAM (34%/CU, from the per-lane table
 copies) caps it at 2 CUs here; a smaller table would allow more.
 
 ### Idea 9 — Model the right thing: spatial / higher-order context
-**Classifier:** conditional entropy under candidate contexts (`context_model/`).
+**Classifier:** conditional entropy under candidate contexts (the context study (branch `sadat-brainstorming`)).
 **Theory:** we modelled each byte in isolation (order-0). Images are spatially
 redundant, so conditioning on neighbouring pixels should compress far better.
 **Measured:** MED predictor (JPEG-LS style) reaches **1.202 bits/sym = 15.0%** on

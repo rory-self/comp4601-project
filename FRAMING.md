@@ -184,7 +184,7 @@ then building. Full method, all seven ideas and the blocker taxonomy are in
   on the tANS kernel (64-bit aligned AXI: 91,582 → 16,892 cycles, 5.4×); applying
   the same treatment here is a clock-independent win, and needs a bitstream
   rebuild to confirm on fabric.
-- **Fold the entropy classifier into the optimised packer.** `bypass_hybrid/`
+- **Fold the entropy classifier into the optimised packer.** the hybrid experiment (branch `sadat-brainstorming`)
   proves the idea scales cycles with the adaptive-bin count, but it reuses the
   *software* packer (variable-trip `while` loops, ~95 cycles/byte absolute).
   Dropping the same `ADAPT_MASK` into Bryan's two-stage M-coder (~8 cycles/byte)
