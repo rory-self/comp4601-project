@@ -17,9 +17,39 @@ FW=/lib/firmware/xilinx/arith/arith.bin      # the Kria app slot we swap into
 # ---- ssh/scp without an interactive password prompt -------------------------
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 printf '#!/bin/sh\necho %s\n' "$BOARD_PW" > "$TMP/ap"; chmod +x "$TMP/ap"
-SSHOPT=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
-bssh(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w ssh "${SSHOPT[@]}" "$BOARD" "$@"; }
-bscp(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w scp "${SSHOPT[@]}" "$@"; }
+SSHOPT=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o NumberOfPasswordPrompts=1)
+# setsid+SSH_ASKPASS feeds the password without a TTY. If you use SSH keys instead,
+# this is harmless. If `setsid` is missing (e.g. macOS), fall back to plain ssh and
+# let it prompt.
+if command -v setsid >/dev/null 2>&1; then
+  bssh(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w ssh "${SSHOPT[@]}" "$BOARD" "$@"; }
+  bscp(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w scp "${SSHOPT[@]}" "$@"; }
+else
+  bssh(){ ssh "${SSHOPT[@]}" "$BOARD" "$@"; }
+  bscp(){ scp "${SSHOPT[@]}" "$@"; }
+fi
+
+# ---- preflight: fail with something actionable, not "scp failed" ------------
+preflight(){
+  if ! bssh true >/dev/null 2>&1; then
+    cat >&2 <<MSG
+Cannot reach the board over ssh as: $BOARD
+
+  * different IP or user?   BOARD=user@ip ./run_on_board.sh ...
+  * different password?     BOARD_PW=yourpw ./run_on_board.sh ...
+  * board powered on and on the network? try:  ping ${BOARD#*@}
+  * using ssh keys? that works too -- this script only supplies a password
+                    when the board asks for one.
+MSG
+    return 1
+  fi
+  if ! bssh "test -d $(dirname $FW)" >/dev/null 2>&1; then
+    echo "Board reachable, but $(dirname $FW) is missing." >&2
+    echo "  The Kria 'arith' firmware slot is not installed on this board." >&2
+    return 1
+  fi
+  return 0
+}
 
 # ---- design registry:  key | dir | bitstream | host binary | extra files | args
 designs=(
@@ -79,6 +109,7 @@ run_one(){
 
 # ---- main -------------------------------------------------------------------
 [ $# -eq 0 ] && { usage; exit 0; }
+preflight || exit 1
 
 if [ "$1" = "all" ]; then
   SUM="$TMP/summary"; : > "$SUM"
