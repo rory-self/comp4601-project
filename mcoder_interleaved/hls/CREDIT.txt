@@ -1,0 +1,3 @@
+mcoder.h, mcoder_tables.h, mcoder_enc.cpp, mcoder_dec.cpp are Bryan Bong's
+M-coder (H.264/CABAC) core, from branch m_coderbb (brain_storming/mcoder/).
+arith_mc_interleaved.cpp applies our C-slow time-interleaving to that core.

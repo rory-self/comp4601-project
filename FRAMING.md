@@ -155,19 +155,44 @@ interleaving. Kept as an upper bound, not a design — see
 
 ---
 
+## 5b. Iteration 3 — workload-classified acceleration (done; see `EXPLORATION.md`)
+
+We stopped asking "how fast can we make *the* coder" and started asking **"which
+workload class unlocks which technique"**, measuring the classifier first and only
+then building. Full method, all seven ideas and the blocker taxonomy are in
+[EXPLORATION.md](EXPLORATION.md). Headlines:
+
+- **Multiply-free adaptive coding (M-coder).** Best general-purpose design:
+  **31.1 M sym/s on fabric (9.0× ARM)**, 0 DSP.
+- **Shared frequency table → tree method (static tANS).** Board-validated
+  **147.9 M sym/s vs 56.25 M/s ARM = 2.63×**, lossless, ratio 84.08% (= the source
+  entropy). Got there by removing three *hardware* blockers, not by changing the
+  algorithm: 28.2 → 35.8 (SIMD lockstep + per-lane tables) → 194 M/s cosim
+  (64-bit aligned AXI) → 147.9 M/s on fabric.
+- **Entropy-classified hybrid coder (new).** Measure `H(bit|ctx)` per bit-tree
+  level; bins the model cannot beat are packed raw. **2.02× fewer cycles** (3 of 8
+  bins adaptive) and **13.9×** (0 of 8), *with slightly better compression* — and
+  Fmax rises 192.8 → 228.3 MHz as recurrence pressure drops.
+- **Energy (measured, INA260 on the SOM).** FPGA **23.3 nJ/byte vs ARM 61.6
+  nJ/byte = 2.64× less energy**, despite drawing +0.073 W more instantaneous power.
+- **One idea rejected on evidence:** MPS run-mode — the profiler showed mean run
+  lengths of 1.0–2.8 and `p_max ≤ 0.11`, so it would almost never fire. Not built.
+
 ## 6. Remaining to-dos
-- **Bursted / coalesced I/O.** The ~1.46× real-DDR tax on the interleaved kernel
-  is un-burstable `m_axi`. Redesign Load/Store as coalesced/wide transfers
-  (dataflow load → compute → store). Clock-independent win.
-- **Kill the multiply (table-driven coding).** The interval multiply is the
-  critical path. Two multiply-free routes:
-  - our **"tree"/tANS idea** — precompute interval boundaries for a fixed
-    histogram into a table; encode a whole byte per state transition (no multiply,
-    ~1 op/byte). Requires a static model; on stationary images the compression
-    cost is ~nil (both order-0).
-  - a teammate's **M-coder (CABAC)** already realises this: table lookups, zero
-    DSP, II=1, and it *compresses better* than our range coder — a proven starting
-    point. The strongest next design is likely **his M-coder inside our
-    interleaving harness** (multiply-free core + area-efficient scheduling).
-- **Realise 31 M/s on fabric** would need *both* the above *and* a ~300 MHz
-  platform clock (a platform rebuild, since 200/400 are the only nearby options).
+- **Bursted / coalesced I/O on the *arith* interleaved kernel.** It still loses
+  ~1.46× to real DDR because its `m_axi` does not burst. We proved the fix works
+  on the tANS kernel (64-bit aligned AXI: 91,582 → 16,892 cycles, 5.4×); applying
+  the same treatment here is a clock-independent win, and needs a bitstream
+  rebuild to confirm on fabric.
+- **Fold the entropy classifier into the optimised packer.** `bypass_hybrid/`
+  proves the idea scales cycles with the adaptive-bin count, but it reuses the
+  *software* packer (variable-trip `while` loops, ~95 cycles/byte absolute).
+  Dropping the same `ADAPT_MASK` into Bryan's two-stage M-coder (~8 cycles/byte)
+  should give the full benefit at production speed.
+- **Automate the classifier → mask path.** Today we profile offline and bake the
+  mask in at compile time. A runtime version would profile the first block, pick
+  the mask, and send it as a kernel argument (the kernel would need all 8 levels
+  routable at run time, which costs some area).
+- **Realise ~31 M/s for the interleaved arith design on fabric** would need both
+  bursted I/O *and* a ~300 MHz platform clock (a platform rebuild — 200/400 MHz
+  are the only nearby options this platform offers).

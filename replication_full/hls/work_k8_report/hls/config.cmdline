@@ -1,3 +1,0 @@
-relativeroot=/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/replication_full/hls
-original_argv=-c --mode hls --config synth_k8.cfg --work_dir work_k8_report 
-

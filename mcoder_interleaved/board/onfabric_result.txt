@@ -1,0 +1,25 @@
+On-fabric validation — interleaved M-coder (iteration 3) — KV260 PL @ 200 MHz
+Bryan's multiply-free CABAC core + our C-slow interleaving (LANES=16, GROUPS=4).
+XRT host, chrono around kernel enqueue+wait only. Same board/method as the others.
+
+  input 4095 symbols -> compressed 1835 bytes (44.8%), HW output decodes == input [LOSSLESS]
+  (matches C/RTL co-simulation exactly)
+
+Block-size sweep (mean us/call, throughput):
+  N= 256 :  68.1 us   3.76 M sym/s
+  N=1024 :  92.9 us  11.02 M sym/s
+  N=2048 : 121.8 us  16.82 M sym/s
+  N=4095 : 181.6 us  22.55 M sym/s
+  fit    : ~60 us overhead + 29.6 ns/sym  ->  ~33.8 M sym/s asymptotic
+  (29.6 ns/sym < cosim 34 ns/sym: the M-coder's m_axi bursts cleanly, so real
+   fabric MEETS cosim -- unlike the arith interleaved, which lost ~1.46x to DDR.)
+
+On-fabric standings, 4 KB blocks, same measurement method:
+  ARM Cortex-A53 (arith5, baseline)     :  3.46 M sym/s   1.0x
+  arith interleaved g4                  : 11.66 M sym/s   3.4x
+  K=8 replicated arith                  : 13.21 M sym/s   3.8x
+  interleaved M-coder g4  (THIS)        : 22.55 M sym/s   6.5x   <-- fabric record
+                                        (asymptotic ~33.8 M/s = 9.8x ARM)
+
+Resources: 23% LUT, ~0 DSP, 17% BRAM, II=1, closes 200 MHz with margin (Fmax 230).
+Also compresses better than the arith coders (44.8% vs 46.5% on the pattern).

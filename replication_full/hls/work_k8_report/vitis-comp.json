@@ -1,9 +1,0 @@
-{
-  "name": "work_k8_report",
-  "type": "HLS",
-  "configuration": {
-    "componentType": "HLS",
-    "configFiles": ["..\/synth_k8.cfg"],
-    "work_dir": "."
-  }
-}
