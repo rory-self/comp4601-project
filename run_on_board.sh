@@ -24,12 +24,14 @@ bscp(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w scp "${SSHOPT[
 # ---- design registry:  key | dir | bitstream | host binary | extra files | args
 designs=(
   "rep|replication_full|bin/arith.bin|bin/demo_arm|data/image.pgm|-i image.pgm"
+  "mcoder|mcoder|bin/arith.bin|bin/demo_arm|data/image.pgm data/text_page.pgm|-i image.pgm"
   "interleaved|interleaved|bin/arith.xclbin|bin/demo_host_arm||-N 4095 -n ITERS"
   "tans|tans|bin/arith.xclbin|bin/demo_host_arm|data/file0.bin data/file1.bin data/file2.bin data/file3.bin|-d /tmp -n 200"
   "multi|tans|bin/arith_multi.xclbin|bin/multi_host_arm|data/file0.bin|-d /tmp -n 300"
 )
 declare -A DESC=(
   [rep]="arith, K=8 replicated        (image demo: CPU vs FPGA, pixel-perfect)"
+  [mcoder]="table-driven M-coder, K=8    (no multiply, 0 DSP -- 2.34x rep on fabric)"
   [interleaved]="arith, C-slow interleaved     (iteration 2, area-efficient)"
   [tans]="tree method, static tANS     (shared frequency table, SIMD + wide AXI)"
   [multi]="tANS x2 compute units        (2 CUs on separate HP ports -- 1.95x scaling)"

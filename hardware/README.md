@@ -7,6 +7,7 @@ output by decoding it back and comparing with the input.
 | design | idea | on fabric | vs its ARM baseline |
 |---|---|---:|---:|
 | [`replication_full`](replication_full) | K independent coders side by side | 13.2 M sym/s | 3.6× (image demo) |
+| [`mcoder`](mcoder) | same K-way structure, but the `range × prob` multiply becomes a 384-byte ROM lookup → **0 DSP**, II=1 | **31.1 M sym/s** | **9.0×** (2.34× `replication_full`) |
 | [`interleaved`](interleaved) | one shared datapath, 16 coder states C-slow interleaved → II=1 at 18% LUT | 11.7 M sym/s | 3.37× |
 | [`tans`](tans) | static table, one lookup per **byte**; ×2 compute units | 147.9 → **286.6** M sym/s | 2.63× / 5.10× |
 
