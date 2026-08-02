@@ -2,11 +2,11 @@
 #define ENCODER_HPP
 
 #include "buffer.hpp"
+#include "coder_types.hpp"
 
 #include <cstdint>
 #include <limits>
 
-using CodeType = uint32_t;
 
 class Encoder {
 private:
