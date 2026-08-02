@@ -1,0 +1,35 @@
+# ---- HLS / Vivado build artifacts (all regenerable from the .cfg files) ----
+work_*/
+w_0x*/
+link_tmp/
+link*_tmp/
+*_link_tmp/
+analyzer_input/
+.Xil/
+.ipcache/
+*.jou
+*.str
+vitis-comp.json
+*.hlscompile_summary
+*.link_summary
+*.xclbin.info
+
+# ---- logs ----
+*.log
+
+# ---- local build output ----
+*.o
+*.a
+a.out
+
+# Compiled test binaries (sources + configs are tracked; rebuild with the
+# commands in each folder's README/DEMO.md)
+workload_profile/profile
+workload_profile/cond_entropy
+tans/software/tans_bench
+tans/software/derisk
+context_model/ctx_study
+
+# NOTE: prebuilt bitstreams (*.xclbin, board/arith.bin) and the cross-compiled
+# aarch64 hosts ARE tracked on purpose -- they let the demo run without a
+# 10-40 min Vivado rebuild.
