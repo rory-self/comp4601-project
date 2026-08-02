@@ -1,0 +1,41 @@
+On-fabric validation — iteration 2 (time-interleaved g4) vs iteration 1 (K=8 replicated)
+KV260, PL @ 200 MHz (platform clock id 1), XRT host, chrono around kernel enqueue+wait only.
+Same board, same session, same measurement method. Input = compressible 'a'+i%7 pattern.
+
+Both designs: LOSSLESS (board output decodes == input). Interleaved g4 compresses
+4095 B -> 1904 B (46.50%), byte-identical to C/RTL co-simulation.
+
+Per-call mean (us) and throughput (M sym/s), 1500 iters:
+
+  N (bytes) |  g4 interleaved  |  K=8 replicated
+  ----------+------------------+-----------------
+       256  |  80.3us  3.19 M/s|  71.2us  3.59 M/s
+      1024  | 139.8us  7.32 M/s| 121.5us  8.43 M/s
+      2048  | 212.4us  9.64 M/s| 183.5us 11.16 M/s
+      4095  | 351.1us 11.66 M/s| 310.1us 13.21 M/s
+
+Linear fit  (per-call = fixed_overhead + N * per_symbol):
+  g4 interleaved : ~62 us overhead + 70.5 ns/sym  -> 14.2 M/s asymptotic
+  K=8 replicated : ~55 us overhead + 62.2 ns/sym  -> 16.1 M/s asymptotic
+
+RESULT: on real fabric at 200 MHz, the K=8 replication is ~12% FASTER than the
+time-interleaved g4 — the reverse of the C/RTL co-simulation ranking (which had
+g4 at 20.7 M/s kernel-only). Two reasons the cosim advantage did not translate:
+
+  1) CLOCK CAP. The interleaved g4's edge assumed ~293 MHz (its HLS Fmax). This
+     platform only offers fixed 100/200/400 MHz clocks, so it runs at 200 MHz,
+     throwing away the headroom that made it win in the first place.
+
+  2) REAL DDR vs idealised cosim AXI. The interleaved kernel's m_axi I/O does not
+     burst cleanly (HLS warned: "inferred burst reverted"). Cosim models AXI with
+     a fixed 64-cycle latency and hides this; on real DDR the byte-granular,
+     non-coalesced Load/Store add ~1.46x to the kernel time (198us cosim -> ~289us
+     real for 4095 B). The K=8 replicated kernel bursts its I/O and matches cosim.
+
+TAKEAWAYS for the report:
+  - Iteration-2 architecture is VALIDATED CORRECT on hardware (lossless, exact
+    compressed size), and reaches aggregate II=1 with the full 255-context model.
+  - Its 31 M/s figure is a genuine *HLS* result (293 MHz, cycle-accurate cosim),
+    but realising it on fabric needs BOTH a ~300 MHz platform clock AND bursted
+    I/O (wide/coalesced m_axi + dataflow). Neither is available on the stock
+    kv260_custom platform, so K=8 replication remains the best *fabric* design here.
