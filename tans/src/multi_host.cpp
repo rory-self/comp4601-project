@@ -1,3 +1,5 @@
+// multi_host -- COMPUTE-UNIT SCALING: runs 1 CU then 2 CUs from the same bitstream
+//                to isolate the effect of instancing.
 // Multi-instance experiment: the same bitstream contains TWO compute units
 // (arith_kernel_1, arith_kernel_2) on separate HP port pairs. Running 1 CU vs 2
 // CUs from the same binary isolates the effect of instancing alone.

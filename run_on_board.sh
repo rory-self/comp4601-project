@@ -23,9 +23,9 @@ bscp(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w scp "${SSHOPT[
 
 # ---- design registry:  key | dir | bitstream | host binary | extra files | args
 designs=(
-  "rep|replication_full|bin/arith.bin|bin/arith_host_arm||-N 4095 -n ITERS"
+  "rep|replication_full|bin/arith.bin|bin/bench_host_arm||-N 4095 -n ITERS"
   "interleaved|interleaved|bin/arith.xclbin|bin/demo_host_arm||-N 4095 -n ITERS"
-  "tans|tans|bin/arith.xclbin|bin/tans_host_arm|data/file0.bin data/file1.bin data/file2.bin data/file3.bin|-d /tmp -n 200"
+  "tans|tans|bin/arith.xclbin|bin/demo_host_arm|data/file0.bin data/file1.bin data/file2.bin data/file3.bin|-d /tmp -n 200"
   "multi|tans|bin/arith_multi.xclbin|bin/multi_host_arm|data/file0.bin|-d /tmp -n 300"
 )
 declare -A DESC=(

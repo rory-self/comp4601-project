@@ -13,11 +13,11 @@ project's reference point. The ARM baseline for the whole project comes from her
 ```
 src/     arith5.cpp, arith3.h   the coder (KWAY-parameterised)
          arith_board.cpp        board top: arith_kernel(in,n,out,out_len)
-         host.cpp               throughput host
+         bench_host.cpp               throughput host
          demo_host.cpp          visual image demo (CPU vs FPGA)
 test/    kernel_tb.cpp, board_tb.cpp, sw_bench.cpp
 synth/   hls.cfg, board.cfg, link.cfg, sweep.sh (K-sweep)
-bin/     arith.bin, arith_host_arm, demo_arm
+bin/     arith.bin, bench_host_arm, demo_arm
 data/    image.pgm, img_smooth.pgm, img_noise.pgm
 results/ synth_results.md, onfabric_result.txt, arm_baseline.txt,
          sweep_results.csv, sweep_big_results.csv, lean_variant_note.md
@@ -46,7 +46,7 @@ v++ --link --target hw --platform "$PLATFORM" --config link.cfg \
 
 # 4. hosts (cross-compile)
 cd ../src
-"$CXX_ARM" $ARM_CXXFLAGS -I. host.cpp arith5.cpp -DKWAY=8 -o ../bin/arith_host_arm $ARM_LDFLAGS
+"$CXX_ARM" $ARM_CXXFLAGS -I. bench_host.cpp arith5.cpp -DKWAY=8 -o ../bin/bench_host_arm $ARM_LDFLAGS
 "$CXX_ARM" $ARM_CXXFLAGS -I. demo_host.cpp arith5.cpp -DKWAY=8 -o ../bin/demo_arm $ARM_LDFLAGS
 
 # 5. run

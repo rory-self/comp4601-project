@@ -1,3 +1,5 @@
+// demo_host -- SOFTWARE vs HARDWARE: compresses an image on the ARM and on the
+//               FPGA, times both, and proves the reconstruction is pixel-perfect.
 // Visual demo: compress + decompress a grayscale image, CPU vs FPGA, on the board.
 //   - loads a P5 (.pgm) image
 //   - compresses it block-by-block (4 KB blocks) with (a) the ARM CPU coder and

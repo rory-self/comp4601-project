@@ -1,3 +1,6 @@
+// demo_host -- SOFTWARE vs HARDWARE: times the ARM tANS coder against the FPGA
+//               kernel over the shared-table files; -m sw|hw give sustained-load
+//               modes for the energy measurement.
 // On-fabric host for the SIMD + wide-AXI static tANS kernel ("tree method").
 //   SOFTWARE reference : the same tANS coder on the ARM (measured 52.5 M sym/s --
 //                        tANS is cheap, so this is a genuinely fast baseline).

@@ -13,14 +13,14 @@ scaling. Energy (board INA260 sensor): **23.3 vs 61.6 nJ/byte = 2.64× less**.
 src/     arith_tans.cpp   the kernel (also the board top: arith_kernel)
          tans_table.h     the baked static table
          tans.h           table construction + software coder
-         host.cpp         SW-vs-HW host (also -m sw|hw energy modes)
+         demo_host.cpp    SW-vs-HW host (also -m sw|hw energy modes)
          multi_host.cpp   1 CU vs 2 CUs scaling test
 test/    kernel_tb.cpp    co-simulation testbench
          tans_bench.cpp   software round-trip + ratio + CPU speed
 synth/   hls.cfg          C-synthesis / co-sim / .xo
          link.cfg         1 compute unit @200 MHz
          link_multi.cfg   2 compute units on separate HP ports
-bin/     arith.xclbin, arith_multi.xclbin, tans_host_arm, multi_host_arm
+bin/     arith.xclbin, arith_multi.xclbin, demo_host_arm, multi_host_arm
 data/    file0..3.bin     four files drawn from ONE shared distribution
 results/ hls_results.md, software_results.md, onfabric_result.txt
 ```
@@ -46,7 +46,7 @@ v++ --link --target hw --platform "$PLATFORM" --config link.cfg \
 #    2 compute units: use link_multi.cfg -> ../bin/arith_multi.xclbin
 
 # 4. host (the board has no compiler -- cross-compile here)
-cd ../src && "$CXX_ARM" $ARM_CXXFLAGS -I. host.cpp -o ../bin/tans_host_arm $ARM_LDFLAGS
+cd ../src && "$CXX_ARM" $ARM_CXXFLAGS -I. demo_host.cpp -o ../bin/demo_host_arm $ARM_LDFLAGS
 
 # 5. run on the board
 cd .. && ../run_on_board.sh tans      # or: ../run_on_board.sh multi

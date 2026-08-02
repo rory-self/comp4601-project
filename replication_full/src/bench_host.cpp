@@ -1,14 +1,10 @@
-// On-fabric host for the time-interleaved arithmetic-coding kernel (KV260, XRT).
+// bench_host -- HARDWARE ONLY: profiles the kernel (chrono around enqueue+wait)
+//                and verifies the board's output is lossless. No software comparison.
+// On-fabric host for the K-way arithmetic-coding kernel (KV260, XRT).
 //   - loads the xclbin and runs arith_kernel(in, n, out, out_len) on the PL
 //   - verifies losslessness (decode the board's output, compare to the input)
 //   - profiles with std::chrono around ONLY the kernel enqueue + wait
 // Build (C++20): aarch64 cross-compile against the XRT sysroot.
-//
-// NOTE vs the K-way host: the interleaved kernel splits the message into
-// LANES = 16 chunks, so the compressed stream header is 16 x uint16 lengths and
-// there are 16 chunks to decode.  The per-chunk stream format (continuation
-// flag + 8-level bit-tree, WNC renorm) is identical, so the decoder is unchanged
-// apart from kKWay = 16.
 
 #include <algorithm>
 #include <array>
@@ -30,10 +26,11 @@ namespace {
 using byte  = std::uint8_t;
 using Clock = std::chrono::high_resolution_clock;
 
-constexpr int kKWay   = 16;      // == LANES in the interleaved kernel
+constexpr int kKWay   = 8;
 constexpr int kMaxIn  = 4096;
 constexpr int kMaxOut = 8192;
 
+// Range-coder / bit-model parameters (must match the kernel).
 constexpr std::uint32_t kCodeBits  = 16;
 constexpr std::uint32_t kTop       = (1u << kCodeBits) - 1;
 constexpr std::uint32_t kFirstQtr  = (kTop + 1) / 4;
@@ -45,15 +42,19 @@ constexpr std::uint32_t kProbInit  = kProbTotal / 2;
 constexpr std::uint32_t kMoveBits  = 5;
 constexpr int kNTree = 256;
 
+// Host-side decoder, used only to prove the board's output is lossless.
 class RangeDecoder {
 public:
     explicit RangeDecoder(std::span<const byte> bits) : bits_{bits} { reset(); }
+
+    // Decode one whole chunk (self-terminating via a "more-data" flag bit).
     std::vector<byte> decode_chunk() {
         std::array<std::uint32_t, kNTree> tree;
         tree.fill(kProbInit);
         std::uint32_t flag = kProbInit;
+
         std::vector<byte> out;
-        while (decode_bit(flag)) {
+        while (decode_bit(flag)) {                 // 1 = another symbol follows
             int ctx = 1, sym = 0;
             for (int i = 7; i >= 0; --i) {
                 const int b = decode_bit(tree[ctx]);
@@ -64,11 +65,15 @@ public:
         }
         return out;
     }
+
 private:
     std::span<const byte> bits_;
     long          pos_  = 0;
     std::uint32_t low_  = 0, high_ = kTop, code_ = 0;
-    void reset() { for (std::uint32_t i = 0; i < kCodeBits; ++i) code_ = (code_ << 1) | next_bit(); }
+
+    void reset() {
+        for (std::uint32_t i = 0; i < kCodeBits; ++i) code_ = (code_ << 1) | next_bit();
+    }
     std::uint32_t next_bit() {
         const auto byte_idx = static_cast<std::size_t>(pos_ >> 3);
         const int  off = 7 - static_cast<int>(pos_ & 7);
@@ -81,9 +86,9 @@ private:
         int bit;
         if ((code_ - low_) < split) { bit = 0; high_ = low_ + split - 1; }
         else                        { bit = 1; low_ = low_ + split; }
-        for (;;) {
+        for (;;) {                                 // renormalise
             if (high_ < kHalf) {
-            } else if (low_ >= kHalf)                        { code_ -= kHalf;     low_ -= kHalf;     high_ -= kHalf; }
+            } else if (low_ >= kHalf)                       { code_ -= kHalf;     low_ -= kHalf;     high_ -= kHalf; }
             else if (low_ >= kFirstQtr && high_ < kThirdQtr) { code_ -= kFirstQtr; low_ -= kFirstQtr; high_ -= kFirstQtr; }
             else break;
             low_  = (low_ << 1) & kTop;
@@ -96,9 +101,10 @@ private:
     }
 };
 
+// Split the compressed stream back into its K chunks and decode each.
 std::vector<byte> decode_kway(std::span<const byte> comp) {
     std::vector<byte> out;
-    std::size_t offset = 2 * kKWay;
+    std::size_t offset = 2 * kKWay;                // header: K x uint16 lengths
     for (int k = 0; k < kKWay; ++k) {
         const int len = comp[2 * k] | (comp[2 * k + 1] << 8);
         const auto chunk = RangeDecoder{comp.subspan(offset, len)}.decode_chunk();
@@ -109,7 +115,8 @@ std::vector<byte> decode_kway(std::span<const byte> comp) {
 }
 
 std::string_view arg_of(std::span<char*> args, std::string_view flag, std::string_view fallback) {
-    for (std::size_t i = 1; i + 1 < args.size(); ++i) if (flag == args[i]) return args[i + 1];
+    for (std::size_t i = 1; i + 1 < args.size(); ++i)
+        if (flag == args[i]) return args[i + 1];
     return fallback;
 }
 int int_arg(std::span<char*> args, std::string_view flag, int fallback) {
@@ -123,7 +130,7 @@ int int_arg(std::span<char*> args, std::string_view flag, int fallback) {
 
 int main(int argc, char** argv) {
     const std::span args{argv, static_cast<std::size_t>(argc)};
-    const std::string xclbin{arg_of(args, "-x", "arith.xclbin")};
+    const std::string xclbin{arg_of(args, "-x", "arith.bin")};
     const int dev   = int_arg(args, "-d", 0);
     const int iters = int_arg(args, "-n", 2000);
     const int n     = std::min(int_arg(args, "-N", 4095), kMaxIn);
@@ -133,7 +140,7 @@ int main(int argc, char** argv) {
     const auto uuid = device.load_xclbin(xclbin);
     auto kernel = xrt::kernel(device, uuid, "arith_kernel");
 
-    // Buffer args at kernel indices 0 (in), 2 (out), 3 (out_len); index 1 is scalar n.
+    // Buffer args sit at kernel indices 0 (in), 2 (out), 3 (out_len); index 1 is the scalar n.
     auto bo_in  = xrt::bo(device, kMaxIn,      kernel.group_id(0));
     auto bo_out = xrt::bo(device, kMaxOut,     kernel.group_id(2));
     auto bo_len = xrt::bo(device, sizeof(int), kernel.group_id(3));
@@ -141,9 +148,11 @@ int main(int argc, char** argv) {
     auto* out = bo_out.map<byte*>();
     auto* len = bo_len.map<int*>();
 
+    // Input: a compressible pattern (matches the co-sim workload).
     for (int i = 0; i < n; ++i) in[i] = static_cast<byte>('a' + (i % 7));
     bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
+    // --- correctness run ---
     kernel(bo_in, n, bo_out, bo_len).wait();
     bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
     bo_len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
@@ -160,6 +169,7 @@ int main(int argc, char** argv) {
                            : "FAIL: round-trip mismatch\n")
               << "----------------------------------------------\n";
 
+    // --- profiling: time only enqueue + wait ---
     std::vector<double> samples;
     samples.reserve(iters);
     for (int k = 0; k < iters; ++k) {

@@ -1,3 +1,5 @@
+// demo_host -- SOFTWARE vs HARDWARE: times the ARM coder against the FPGA kernel
+//               on the same input and verifies both are lossless.
 // Live SW-vs-HW demo for the time-interleaved coder (KV260, XRT).
 //   - SOFTWARE reference: the efficient single-stream CPU coder (arith5, K=1) on
 //     the ARM  -- the same 3.46 M sym/s baseline used throughout the project.

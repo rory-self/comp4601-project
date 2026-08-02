@@ -19,13 +19,13 @@ schedule the coding loop at aggregate **II=1** *and* raise the clock.
 ```
 src/     arith_interleaved.cpp/.h  the coder (exact-width ap_uint, optional REG_MUL)
          arith_board.cpp           board top: arith_kernel(in,n,out,out_len)
-         host.cpp                  throughput host
+         bench_host.cpp                  throughput host
          demo_host.cpp             live SW-vs-HW host
 test/    kernel_tb.cpp, board_tb.cpp
 synth/   hls.cfg    standalone kernel (C-synthesis + co-sim)
          board.cfg  board top -> .xo
          link.cfg   1 compute unit @200 MHz
-bin/     arith.xclbin, arith_host_arm, demo_host_arm
+bin/     arith.xclbin, bench_host_arm, demo_host_arm
 results/ hls_results.md, onfabric_result.txt, 400mhz_attempt.md, how_it_works.md
 ```
 
@@ -50,7 +50,7 @@ v++ --link --target hw --platform "$PLATFORM" --config link.cfg \
 
 # 4. hosts (cross-compile; the board has no compiler)
 cd ../src
-"$CXX_ARM" $ARM_CXXFLAGS -I. host.cpp -o ../bin/arith_host_arm $ARM_LDFLAGS
+"$CXX_ARM" $ARM_CXXFLAGS -I. bench_host.cpp -o ../bin/bench_host_arm $ARM_LDFLAGS
 "$CXX_ARM" $ARM_CXXFLAGS -I. -I../../replication_full/src demo_host.cpp \
     ../../replication_full/src/arith5.cpp -DKWAY=1 -o ../bin/demo_host_arm $ARM_LDFLAGS
 
