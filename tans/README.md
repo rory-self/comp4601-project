@@ -93,4 +93,5 @@ Measured: **FPGA 23.3 nJ/byte vs ARM 61.6 nJ/byte = 2.64× less energy** (it dra
 +0.073 W more but finishes 2.70× sooner — race to idle).
 
 > **Scope:** lossless on *any* input, but it only **compresses** data matching its
-> baked table — it expands an ELF binary to 143%. See `../ARBITRARY_FILES.md`.
+> baked table. Measured: it expands an aarch64 ELF binary to 143% and a PDF to 124%,
+> while a file matching its table compresses to 84%.
