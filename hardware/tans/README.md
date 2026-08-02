@@ -22,7 +22,7 @@ synth/   hls.cfg          C-synthesis / co-sim / .xo
          link_multi.cfg   2 compute units on separate HP ports
 bin/     arith.xclbin, arith_multi.xclbin, demo_host_arm, multi_host_arm
 data/    file0..3.bin     four files drawn from ONE shared distribution
-results/ hls_results.md, software_results.md, onfabric_result.txt
+results/ hls_results.md, software_results.md, onfabric_result.txt, energy_measurement.txt
 ```
 
 ## Build & run

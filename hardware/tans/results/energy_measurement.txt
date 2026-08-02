@@ -1,0 +1,33 @@
+Energy measurement — measured on the board, NOT from a synthesis report
+=======================================================================
+Vitis/Vivado do not report energy. HLS reports resources and timing only; even
+Vivado's report_power is an *estimate* from a switching model. These figures are
+read from the KV260 SOM's on-board INA260 current/power sensor while the board is
+actually running the workload.
+
+Sensor:  /sys/class/hwmon/hwmon0/power1_input     (total SOM power, microwatts)
+         (hwmon0 name = "ina260_u14")
+
+Method:  run one engine flat out for 12 s, sampling power ~5x/second, and divide
+         average power by measured throughput.
+
+  ./demo_host_arm -x <bitstream> -d /tmp -m sw -t 12     # ARM software only
+  ./demo_host_arm -x <bitstream> -d /tmp -m hw -t 12     # FPGA kernel only
+  cat /sys/class/hwmon/hwmon0/power1_input               # sample during each run
+
+Measured (12 s sustained load each):
+
+  state                 board power     throughput      energy / byte
+  -------------------   -----------     -----------     -------------
+  idle                    3.192 W            -                -
+  ARM software (tANS)     3.349 W        54.3 MB/s        61.6 nJ/B
+  FPGA kernel  (tANS)     3.422 W       146.7 MB/s        23.3 nJ/B
+
+  -> FPGA uses 2.64x LESS ENERGY PER BYTE
+
+Note the FPGA draws MORE instantaneous power (+0.073 W) yet uses less energy,
+because it finishes 2.70x sooner -- race to idle. Reporting watts alone would have
+made the accelerator look worse; energy per byte is the honest metric.
+
+On an incremental basis (subtracting the 3.192 W idle floor, i.e. the marginal cost
+of doing the work): 2.89 nJ/B software vs 1.57 nJ/B hardware = 1.84x better.
