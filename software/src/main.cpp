@@ -127,11 +127,15 @@ auto collect_args(int argc, char* argv[]) -> Args {
     return args;
 }
 
-auto generate_dummy_input() -> Payload {
-    const std::string text = "this is a test, I hope it works";
-    
+auto generate_dummy_input() -> Payload {    
+    constexpr std::size_t num_bytes = 4096;
     std::vector<uint8_t> data;
-    data.insert(data.end(), text.cbegin(), text.cend());
+    data.reserve(num_bytes);
+
+    for (std::size_t i = 0; i < num_bytes; i++) {
+        const uint8_t byte = static_cast<uint8_t>('a' + (i % 7));
+        data.push_back(byte);
+    }
 
     return data;
 }
