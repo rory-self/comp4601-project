@@ -30,7 +30,7 @@ need none of these — just `g++`.
 cd hls
 g++ -O2 -Wno-unknown-pragmas -DKWAY=8 arith5.cpp arith5_test.cpp -o t && ./t   # round-trip
 cd ../software
-g++ -O3 -march=native -Wno-unknown-pragmas -DKWAY=1 arith5.cpp sw_bench.cpp -o sw && ./sw
+g++ -O3 -march=native -Wno-unknown-pragmas -DKWAY=1 ../hls/arith5.cpp sw_bench.cpp -I../hls -o sw && ./sw
 ```
 Expect `PASS` / `round-trip=OK`. The `KWAY=1` bench is the honest CPU baseline
 (**3.46 M sym/s** on the board's A53).
@@ -65,7 +65,7 @@ v++ --link --target hw --platform "$PLATFORM" --config link_x2.cfg -o arith_x2.x
 ```sh
 cd board
 "$CXX_ARM" -std=c++17 -O3 -mcpu=cortex-a53 --sysroot="$SYSROOT" -I"$SYSROOT/usr/include" \
-   host.cpp arith5.cpp -DKWAY=8 -o arith_host_arm \
+   host.cpp ../hls/arith5.cpp -DKWAY=8 -I../hls -o arith_host_arm \
    -L"$SYSROOT/usr/lib" -lxrt_coreutil -lpthread -luuid
 ```
 > Do **not** `source` the SDK's `environment-setup-*` script — its `--sysroot` points at

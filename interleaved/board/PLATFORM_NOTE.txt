@@ -1,4 +1,0 @@
-The build needs the KV260 platform, omitted here to keep the repo small.
-It is bundled in the handoff zip under platform/kv260_custom/.
-Source: labs/workspace/kv260_custom/export/kv260_custom/
-Point build.sh at it via:  PLATFORM=/abs/path/kv260_custom.xpfm ./build.sh

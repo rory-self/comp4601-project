@@ -74,7 +74,7 @@ cd board
    host.cpp -o arith_host_v2 -L"$SYSROOT/usr/lib" -lxrt_coreutil -lpthread -luuid
 # live SW-vs-HW demo host (software reference = the efficient arith5 coder)
 "$CXX_ARM" -std=c++20 -O3 -march=armv8-a --sysroot="$SYSROOT" -I"$SYSROOT/usr/include" \
-   demo_host.cpp arith5.cpp -DKWAY=1 -o demo_host_arm \
+   demo_host.cpp ../../replication_full/hls/arith5.cpp -DKWAY=1 -I../../replication_full/hls -o demo_host_arm \
    -L"$SYSROOT/usr/lib" -lxrt_coreutil -lpthread -luuid
 ```
 

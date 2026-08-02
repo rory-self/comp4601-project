@@ -37,7 +37,7 @@ The generator lives in the project history (`gen_demo`); it writes `TANS_STATE`,
 ## 2. Software: correctness, ratio, and CPU speed
 ```sh
 cd software
-g++ -O3 -march=native -Wno-unknown-pragmas -DKWAY=1 tans_bench.cpp arith5.cpp -I. -o tans_bench
+g++ -O3 -march=native -Wno-unknown-pragmas -DKWAY=1 tans_bench.cpp ../../replication_full/hls/arith5.cpp -I. -I../../replication_full/hls -o tans_bench
 ./tans_bench ../../replication_full/demo/image.pgm
 ```
 Shows lossless round-trips, and **tANS is 8.6× faster than the adaptive coder on the
@@ -73,8 +73,8 @@ BRAM (34%/CU, from the per-lane table copies) is what caps this at 2 CUs.
 ## 5. Hosts (cross-compile)
 ```sh
 cd board
-"$CXX_ARM" $ARM_CXXFLAGS -I. host.cpp       -o tans_host_arm  $ARM_LDFLAGS
-"$CXX_ARM" $ARM_CXXFLAGS -I. multi_host.cpp -o multi_host_arm $ARM_LDFLAGS
+"$CXX_ARM" $ARM_CXXFLAGS -I../hls -I../software host.cpp       -o tans_host_arm  $ARM_LDFLAGS
+"$CXX_ARM" $ARM_CXXFLAGS -I../hls -I../software multi_host.cpp -o multi_host_arm $ARM_LDFLAGS
 ```
 
 ## 6. Run

@@ -1,7 +1,0 @@
-=== 400 MHz RESULT ===
-NO xclbin -- link failed
-ERROR: [VPL 101-2] design did not meet timing - pulse width violation. Check /home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/interleaved/board/link_tmp/link/vivado/vpl/prj/prj.runs/impl_1/dr_timing_summary.rpt for more details
-ERROR: [VPL 101-3] sourcing script /home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/interleaved/board/link_tmp/link/vivado/vpl/scripts/impl_1/_full_write_bitstream_pre.tcl failed
-ERROR: [VPL 12-13638] Failed runs(s) : 'impl_1'
-ERROR: [VPL 60-773] In '/home/sadat-kabir/Work/COMP4601/labs/Project/comp4601-project/interleaved/board/link_tmp/link/vivado/vpl/vivado.log', caught Tcl error:  ERROR: [Common 17-39] 'wait_on_runs' failed due to earlier errors.
-ERROR: [VPL 60-704] Integration error, Failed to complete hardware generation. The run name is 'impl_1'. An error stack with function names and arguments may be available in the 'vivado.log'.

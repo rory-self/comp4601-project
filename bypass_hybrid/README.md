@@ -25,7 +25,7 @@ Software steps need only `g++`.
 
 ## 1. Software: ratio + losslessness for a mask
 ```sh
-g++ -O2 -Wno-unknown-pragmas -DADAPT_MASK=0x0E hybrid.cpp hybrid_test.cpp -o t
+g++ -O2 -Wno-unknown-pragmas -DADAPT_MASK=0x0E hybrid.cpp hybrid_test.cpp -I../mcoder_interleaved/hls -o t
 ./t ../replication_full/demo/image.pgm ../tans/demo/file0.bin ../replication_full/demo/img_noise.pgm
 ```
 Try `0xFF`, `0x0E`, `0x00` to reproduce the table in `RESULTS.md`. Dropping bins the

@@ -72,7 +72,7 @@ so the comparison is like-for-like.
 ```sh
 cd board
 "$CXX_ARM" -std=c++20 -O3 -march=armv8-a -Wno-unknown-pragmas --sysroot="$SYSROOT" \
-   -I"$SYSROOT/usr/include" -I. host.cpp -o mc_host_arm \
+   -I"$SYSROOT/usr/include" -I../hls host.cpp -o mc_host_arm \
    -L"$SYSROOT/usr/lib" -lxrt_coreutil -lpthread -luuid
 ```
 
