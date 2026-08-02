@@ -1,11 +1,5 @@
 #include "encoder.hpp"
 
-namespace {
-constexpr CodeType one_half = 0x80000000U;
-constexpr CodeType one_quarter = 0x40000000U;
-constexpr CodeType three_quarters = 0xC0000000U;
-} // namespace
-
 void Encoder::encode_symbol(const uint32_t cum_low, const uint32_t cum_high, const uint32_t total) {
     const uint64_t range = static_cast<uint64_t>(_high) - _low + 1;
     _high = _low + static_cast<CodeType>((range * cum_high) / total - 1);
