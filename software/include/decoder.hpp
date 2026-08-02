@@ -6,8 +6,8 @@
 
 class Decoder {
 private:
-    CodeType _low = std::numeric_limits<CodeType>::min();
-    CodeType _high = std::numeric_limits<CodeType>::max();
+    CodeType _low = 0;
+    CodeType _high = UINT32_MAX;
     CodeType _value = 0;
     InputBuffer _buffer;
 

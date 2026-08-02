@@ -4,9 +4,10 @@
 #include <chrono>
 #include <iostream>
 #include <fstream>
+#include <optional>
 
 namespace {
-using Args = std::unordered_map<std::string_view, std::optional<std::string_view>>;
+using Args = std::unordered_map<std::string, std::optional<std::string>>;
 using Clock = std::chrono::high_resolution_clock;
 using TimePoint = std::chrono::system_clock::time_point;
 
@@ -15,7 +16,7 @@ constexpr const char *file_flag = "--file";
 
 [[nodiscard]] auto collect_args(int argc, char* argv[]) -> Args;
 [[nodiscard]] auto generate_dummy_input() -> Payload;
-[[nodiscard]] auto read_file_to_bytes(const std::string_view file_path) -> Payload;
+[[nodiscard]] auto read_file_to_bytes(const std::string& file_path) -> Payload;
 void write_bytes_to_file(const std::vector<uint8_t>& data);
 auto run_encode(const Args& args) -> Payload;
 void run_decode(const Args& args, const Payload& payload);
@@ -35,7 +36,7 @@ auto main(int argc, char* argv[]) -> int {
 namespace {
 auto run_encode(const Args& args) -> Payload {
     // TODO read input from file or command line
-    const Payload input = args.contains(file_flag) ? read_file_to_bytes(args.at(file_flag).value())
+    const Payload input = args.find(file_flag) != args.cend() ? read_file_to_bytes(args.at(file_flag).value())
             : generate_dummy_input();
 
     const std::size_t pre_encode_size = input.size();
@@ -48,7 +49,7 @@ auto run_encode(const Args& args) -> Payload {
 
     std::cout << "Pre-encode size: " << pre_encode_size << ". Post-encode size: " << encoded_result.size() << ".\n";
 
-    if (args.contains(timing_flag)) {
+    if (args.find(timing_flag) != args.cend()) {
         print_timing_data(start_time, end_time);
     }
 
@@ -62,14 +63,14 @@ void run_decode(const Args& args, const Payload& payload) {
 
     std::cout << "decode complete\n";
 
-    if (args.contains(timing_flag)) {
+    if (args.find(timing_flag) != args.cend()) {
         print_timing_data(start_time, end_time);
     }
 
     write_bytes_to_file(decoded_data);
 }
 
-auto read_file_to_bytes(const std::string_view file_path) -> Payload {
+auto read_file_to_bytes(const std::string& file_path) -> Payload {
     std::string path(file_path);
 
     std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -107,7 +108,7 @@ auto collect_args(int argc, char* argv[]) -> Args {
 
     const std::size_t num_args = static_cast<std::size_t>(argc);
     for (std::size_t i = 1; i < num_args; i++) {
-        std::string_view arg(argv[i]);
+        std::string arg(argv[i]);
 
         if (arg == file_flag) {
             ++i;
@@ -115,7 +116,7 @@ auto collect_args(int argc, char* argv[]) -> Args {
                 throw std::runtime_error("Missing argument where filepath expected!");
             }
 
-            std::string_view filepath(argv[i]);
+            std::string filepath(argv[i]);
             args[arg] = filepath;
             continue;
         }

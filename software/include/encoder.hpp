@@ -5,13 +5,12 @@
 #include "coder_types.hpp"
 
 #include <cstdint>
-#include <limits>
 
 
 class Encoder {
 private:
-    CodeType _low = std::numeric_limits<uint32_t>::min();
-    CodeType _high = std::numeric_limits<uint32_t>::max();
+    CodeType _low = 0;
+    CodeType _high = UINT32_MAX;
     std::size_t _num_pending_bits = 0;
     Buffer _buffer;
 
