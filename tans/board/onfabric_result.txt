@@ -28,3 +28,20 @@ How it got here (each step removed a HARDWARE blocker, not an algorithm change):
    35.8 M/s   SIMD lockstep + per-lane tables -> lanes actually parallel (II=2)
   194.0 M/s   + 64-bit aligned AXI            -> I/O was 90% of runtime
   147.9 M/s   on real fabric                  -> minus XRT per-call overhead
+
+=================== MULTI-INSTANCE (2 compute units) ===================
+One kernel used only ~16% LUT / 34% BRAM, so the chip was mostly idle. Rebuilt
+with nk=arith_kernel:2, each CU on its OWN HP port pair (CU1 -> HP0/HP1,
+CU2 -> HP2/HP3) so they do not contend for AXI bandwidth. Same bitstream holds
+both CUs, so running 1 vs 2 isolates the effect.
+
+  1 CU  : 111.6 us/call   146.75 M sym/s   lossless=YES
+  2 CUs : 114.3 us/pair   286.65 M sym/s   lossless=YES
+  scaling: 1.95x  (2.00x = perfect)
+
+  vs the ARM software baseline (56.25 M sym/s):  2.61x -> 5.10x
+
+Near-linear, so neither DDR bandwidth nor XRT dispatch was a limit at this rate.
+This was the single largest win available: we had been optimising one kernel while
+two thirds of the fabric sat unused. BRAM (34%/CU, from the per-lane table copies)
+caps this at 2 CUs; a smaller table or fewer lanes per CU would allow more.

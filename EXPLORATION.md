@@ -160,6 +160,54 @@ doing the work) it is 2.89 → 1.57 nJ/B, a **1.84×** improvement.
 **Takeaway:** energy tracks *throughput per watt*, and the accelerator wins on both
 bases here. Reporting only instantaneous power would have made the FPGA look worse.
 
+### Idea 8 — Use the rest of the chip: multiple compute units
+**Classifier:** none — just look at the utilisation report. Our best kernel used
+**16% LUT / 34% BRAM**, i.e. two thirds of the fabric was idle while we spent days
+tuning the one kernel inside it.
+**Theory:** blocks are independent, so N copies of the kernel should give N×,
+provided nothing shared (DDR bandwidth, XRT dispatch) saturates first.
+**Built:** `nk=arith_kernel:2` with each CU on its **own HP port pair**
+(CU1→HP0/HP1, CU2→HP2/HP3) so they do not contend for AXI. Both CUs live in one
+bitstream, so running 1 vs 2 isolates the effect exactly.
+**Measured on fabric:**
+| | throughput | vs ARM (56.25 M/s) |
+|---|---:|---:|
+| 1 CU | 146.75 M sym/s | 2.61× |
+| **2 CUs** | **286.65 M sym/s** | **5.10×** |
+→ **1.95× scaling (2.00× = perfect)**, both lossless. Neither DDR bandwidth nor
+dispatch was a limit at this rate. **This was the single largest win available**,
+and it needed one line of `link.cfg` — a humbling contrast with the weeks of
+micro-optimisation inside the kernel. BRAM (34%/CU, from the per-lane table
+copies) caps it at 2 CUs here; a smaller table would allow more.
+
+### Idea 9 — Model the right thing: spatial / higher-order context
+**Classifier:** conditional entropy under candidate contexts (`context_model/`).
+**Theory:** we modelled each byte in isolation (order-0). Images are spatially
+redundant, so conditioning on neighbouring pixels should compress far better.
+**Measured:** MED predictor (JPEG-LS style) reaches **1.202 bits/sym = 15.0%** on
+image.pgm, against our order-0 **6.734 b/sym = 84.2%**.
+**The hardware catch, and it is the interesting part:** our bit-tree needs 255
+probability states *per context*. Order-0 = 1 context = **0.4 KB**, which is why
+16 lanes fit and why all our parallelism was affordable. A MED model needs ~242
+contexts ≈ **91 KB per lane** → only ~2-3 lanes fit instead of 16.
+**Conclusion: compression and parallelism compete for the same BRAM.** The ~4×
+ratio win would cost ~5-8× of our lane count. Software-measured only; not built.
+
+---
+
+## Part 2b — Robustness: does any of this work on real files?
+
+Tested rather than assumed (`ARBITRARY_FILES.md`): a 1.4 MB PDF, an aarch64 ELF
+binary, markdown, and images, encoded then decoded and compared byte-for-byte.
+- **Adaptive coders: fully general** — lossless on everything, ratios behaving
+  sensibly (already-compressed PDF 98.4%, structured binary 28.7%).
+- **Tree method: always correct, but only compresses its own class** — lossless on
+  everything, yet *expands* off-class data (ELF binary 143.3%).
+- A static-table coder must **smooth** its table (every symbol ≥ 1 slot) or it is
+  not total: our first table had 16 zero-probability symbols and **segfaulted** on
+  out-of-alphabet input. Smoothing costs 0.088% ratio and makes an unseen byte cost
+  12 bits instead of being undefined.
+
 ---
 
 ## Part 3 — The blocker taxonomy (the most transferable result)
@@ -174,6 +222,7 @@ Every one of these cost us real time and each has a general lesson.
 | B4 | **HLS does not parallelise unrolled calls** | K lanes ran *sequentially* (199,340 cyc for K=8 = 8× one lane) | rewrite as a **SIMD lockstep loop** (one iteration advances all K lanes) | serial → parallel |
 | B5 | **Shared ROM = one read port** | K lanes cannot look up in the same cycle | **replicate the table per lane** | required for B4 to pay off |
 | B6 | **Byte-serial `m_axi`** | encode was only ~9% of runtime; I/O 90% | **64-bit aligned wide AXI** | **91,582 → 16,892 cycles (5.4×)** |
+| B6a | *(B6 refinement)* the value of fixing I/O depends on **compute intensity per byte** | tANS: 2 cyc/byte → I/O = 90% of runtime. M-coder: ~7 cyc/byte (8 bins) → I/O = only 21% | widen I/O for cheap coders; for expensive ones fix the datapath first | wide AXI = **5.4× on tANS**, but only **~1.2× on the M-coder** — measured from its loop breakdown, so we did *not* spend a build on it |
 | B7 | Platform offers only fixed 100/200/400 MHz | a 293 MHz design still runs at 200 | design *to the clock*, not to Fmax | arith interleaved lost its entire advantage |
 | B8 | XRT per-call overhead ≈ 60 µs | small blocks are latency-bound | batch large blocks | 256 B = 3.8 M/s vs 4 KB = 22.6 M/s |
 | B9 | Unaligned chunk boundaries defeat wide I/O | earlier wide-input attempt was **33% slower** | power-of-two chunking → every chunk 8-byte aligned | made B6's fix possible |
@@ -195,6 +244,7 @@ no change to the compression algorithm at all.
 | M-coder replicated K=8 | any | **31.1 M/s** | **fabric** | ~35% LUT |
 | M-coder interleaved g4 | any (area-limited) | 22.6 M/s | **fabric** | 23% LUT |
 | **tANS SIMD + wide AXI** | **shared frequency table** | **147.9 M/s (2.63× ARM)** | **fabric** | 16% LUT |
+| **tANS × 2 compute units** | **shared frequency table** | **286.6 M/s (5.10× ARM)** | **fabric** | 32% LUT, 68% BRAM |
 | bypass-hybrid, mask 0x0E | partially-modelable data | 2.02× fewer cycles | cosim | — |
 | bypass-hybrid, mask 0x00 | **incompressible data** | **13.9× fewer cycles** | cosim | — |
 

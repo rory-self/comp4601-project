@@ -2,6 +2,9 @@
 work_*/
 w_0x*/
 link_tmp/
+link*_tmp/
+*_link_tmp/
+analyzer_input/
 .Xil/
 .ipcache/
 *.jou
@@ -25,6 +28,7 @@ workload_profile/profile
 workload_profile/cond_entropy
 tans/software/tans_bench
 tans/software/derisk
+context_model/ctx_study
 
 # NOTE: prebuilt bitstreams (*.xclbin, board/arith.bin) and the cross-compiled
 # aarch64 hosts ARE tracked on purpose -- they let the demo run without a
