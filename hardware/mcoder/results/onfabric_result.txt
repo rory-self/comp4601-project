@@ -1,0 +1,24 @@
+On-fabric M-coder kernel — KV260 PL @ 200 MHz, K=8 multi-stream
+(measured on real hardware, XRT host, chrono around kernel enqueue+wait only)
+
+  input 4095 symbols -> 1687 bytes (41.2%), decode(board_output) == input  [LOSSLESS]
+  131.59 us/call (median 132.01, min 125.23) over 2000 iterations
+  32.13 ns/symbol  =>  31.12 M symbols/s
+
+Comparison (identical workload 'a'+(i%7), N=4095, n=2000, same timing boundary):
+  ARM Cortex-A53 software (measured on board) : 3.46 M sym/s   (1.0x)
+  replication_full K=8 ON FABRIC              : 13.29 M sym/s  (3.84x ARM)
+  mcoder K=8 ON FABRIC (this, measured)       : 31.12 M sym/s  (9.0x ARM, 2.34x rep)
+
+Post-route timing (Vivado, impl_1):
+  WNS 0.754 ns   TNS 0.000   0 failing endpoints of 71960   (period 5.000 ns)
+
+Image demo (data/text_page.pgm, 65536 B, 16 calls, timing includes host<->device
+transfer, so not comparable with the kernel-only figure above):
+  65536 -> 9059 bytes (13.8%, 7.23x), pixel-perfect
+  CPU vs FPGA output: IDENTICAL bytes
+  ARM 3.20 -> FPGA 31.37 M sym/s = 9.81x
+
+Note: cosim predicted 6.67 cycles/byte; fabric measured 6.43 (200 MHz / 31.12).
+Agreement within 3.6%, matching the ~3% cosim-vs-fabric agreement seen on
+replication_full.

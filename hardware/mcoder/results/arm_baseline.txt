@@ -1,0 +1,12 @@
+ARM Cortex-A53 (KV260 PS, 1.334 GHz) — software M-coder (MC_KWAY=1)
+measured with test/sw_bench.cpp, chrono around the encode call, 20000 iterations:
+  n=4095 symbols
+  ~313 ns/symbol   =>   ~3.20 M symbols/s
+
+For reference, replication_full's coder on the same CPU: 3.46 M sym/s.
+The M-coder is marginally SLOWER in software -- its advantage is architectural
+(no multiply, fixed-latency renormalisation), not a lower operation count.
+That is worth stating plainly: the 9x is a hardware result, not an algorithmic
+speedup that would also help the CPU.
+
+(x86 reference for the same code, -O3 -march=native: 32.0 ns/sym, 31.2 M sym/s)
