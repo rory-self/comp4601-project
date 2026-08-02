@@ -621,10 +621,24 @@ make SYSROOT=<xrt-sysroot>        # -> mc_demo_arm
 ./mc_demo_arm -i image.pgm -x mcoder.bin
 ```
 
-It loads a P5 `.pgm`, compresses it in 4 KB blocks on **both** the ARM CPU and
-the FPGA, decodes the FPGA's bytes back on the CPU, and prints ASCII previews of
-the original and the reconstruction plus a stats table. Writes
-`reconstructed.pgm`.
+It loads a P5 `.pgm` (grayscale) or P6 `.ppm` (colour), compresses it in 4 KB
+blocks on **both** the ARM CPU and the FPGA, decodes the FPGA's bytes back on
+the CPU, and prints ASCII previews plus a stats table.
+
+```
+./mc_demo_arm -i image.pgm -x mcoder.bin -o image.mcz   # compress, write the stream
+./mc_demo_arm -d image.mcz                              # decompress it back (no board)
+```
+
+`-o` matters for a live demo: without it the compressed data only ever exists in
+memory and the audience has to take the number on trust. With it, `ls -la`
+shows 65551 -> 40484 bytes, and `-d` reads the file back and reconstructs the
+image, so compression and decompression are separate checkable steps.
+
+**Only uncompressed formats make sense.** The coder is format-agnostic — it
+compresses bytes — but PNG and JPEG are already entropy-coded, so an order-0
+byte model *expands* them. Measured on the same picture: `image.pgm` (raw
+pixels) -> **67.4%**, `image.png` -> **101.5%**.
 
 Three things it checks, in increasing strength:
 
@@ -639,6 +653,42 @@ Three things it checks, in increasing strength:
 
 Measured on the 256x256 demo image: 65536 -> 40406 bytes (**61.7%, 1.62x**),
 pixel-perfect.
+
+### The one image class where V5 wins
+
+[demo/text_page.pgm](demo/text_page.pgm) (regenerate with
+[demo/gen_text_page.py](demo/gen_text_page.py)) is bilevel "scanned text" — pure
+0/255 with long white runs. It is the worst case for the M-coder, and it shows
+the tradeoff crossing over as K changes:
+
+| | V5 | M-coder | delta |
+|---|---|---|---|
+| K=1 | 5488 | 6111 | **+11.35%** — V5 wins |
+| K=2 | 6306 | 6613 | **+4.87%** — V5 wins |
+| K=4 | 7654 | 7474 | −2.35% — crossover |
+| **K=8** | 10234 | 9126 | **−10.83%** — M-coder wins |
+
+The mechanism is checkable. V5's `prob += (4096-prob)>>5` only stops once
+`4096-prob < 32`, so p_LPS floors at 31/4096 = 0.0076; reaching it from 0.5
+takes roughly `32*ln(2048/31) ~= 134` consecutive identical bits **in one
+context**. The M-coder plateaus earlier at 0.01875. So V5 wins exactly where a
+single context sees runs longer than ~134 bits — long white margins in bilevel
+text do that; photographs and gradients do not.
+
+Which is why the advantage evaporates with chunking: at K=8 the 4096-byte block
+splits into 512-byte chunks, every chunk restarts its model, and the deep
+contexts see only a handful of samples each. Nothing reaches the floor, so what
+decides the result is convergence speed from the initial state — and CABAC's
+tuned FSM wins that comfortably.
+
+**At the shipped K=8 there is no realistic image where V5 wins.** This was
+searched for, not assumed: 99.9%-pure constant fields, 99%/95% variants, sparse
+document scans, bilevel checkerboards and flat-region synthetics all lose by
+8-23% at K=8. The only K=8 case favouring V5 is uniform random noise, by
+**+0.05%**, where both coders *expand* the data to ~102%.
+
+> Probability floor decides long runs; adaptation trajectory decides short
+> chunks. K picks the regime — and throughput already forced us to K=8.
 
 **Careful with which speedup you quote.** The demo reports FPGA vs *ARM running
 the same M-coder* — that is the "what did acceleration buy" number (~9x). It is
