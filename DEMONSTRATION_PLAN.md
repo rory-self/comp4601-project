@@ -33,12 +33,15 @@ So performance *and* correctness for both SW and HW are visible side by side.
 
 | # | Step | Command | What it shows | Time |
 |---|---|---|---|---|
-| 1 | Baseline: software vs first accelerator | `./run_on_board.sh rep` | The original K=8 replicated coder on fabric: 13.2 M sym/s, lossless | 2 min |
+| 0 | **Visual opener: compress a real image, CPU vs FPGA** | `./demo_arm -i image.pgm -x <bitstream>` | Prints an ASCII preview of the image before and after, then: `lossless: YES (pixel-perfect)`, `CPU vs FPGA output: identical bytes`, **ARM 2.99 MB/s vs FPGA 10.81 MB/s = 3.61×**. Both implementations, performance and validation, in one screen. | 2 min |
+| 1 | Baseline: software vs first accelerator | `./run_on_board.sh rep` | The original K=8 replicated coder on fabric: 13.2 M sym/s, lossless | 1 min |
 | 2 | The best general-purpose design | `./run_on_board.sh mcoder` | Multiply-free CABAC coder: ARM 2.76 → FPGA 22.5 M sym/s, **8.1×**, lossless | 2 min |
 | 3 | Workload-specialised design | `./run_on_board.sh tans` | 4 files sharing a frequency table: ARM 56.3 → FPGA 147.9 M sym/s, **2.63×**, ratio 84.08% | 3 min |
 | 4 | Using the whole chip | `./run_on_board.sh multi` | Same kernel, 2 compute units: **146.8 → 286.6 M sym/s, 1.95× scaling** | 2 min |
 | 5 | Energy comparison | `./tans_host_arm -m sw -t 12` then `-m hw -t 12`, reading the board's INA260 sensor | FPGA **23.3 nJ/byte** vs ARM **61.6 nJ/byte** = **2.64× less energy** | 2 min |
 | 6 | Summary table | `./run_on_board.sh all` (pre-run, shown from scrollback) | All designs side by side | 1 min |
+
+**Step 0 setup:** `scp replication_full/demo/demo_arm replication_full/demo/image.pgm replication_full/board/arith.bin petalinux@10.42.0.25:/tmp/` then load `arith.bin` and run. (Already staged.)
 
 **Fallback if the network drops:** every bitstream and host binary is already
 staged in `/tmp` on the board, so steps can be run directly over a serial/SSH
@@ -48,6 +51,7 @@ sudo xmutil loadapp arith` re-loads it.
 ---
 
 ## Speaking roles
+- **Step 0** — the visual image demo: what the algorithm does and how we verify it.
 - **Step 1–2** — the accelerated coders and how correctness is verified.
 - **Step 3** — the workload-specialised (tree/tANS) design and why its baseline differs.
 - **Step 4–5** — multi-instance scaling and the energy measurement.
