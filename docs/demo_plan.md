@@ -9,7 +9,7 @@ A brief walkthrough of the current repository will be given, showing off the fol
 
 3. The interleaved HLS solution and host code, located in `/hardware/interleaved`.
 
-4. Our 'mcoder' HLS solution and hode code, located currently in branch m_coderbb under `/brain_storming/mcoder`.
+4. Our 'mcoder' HLS solution and host code, located currently in branch m_coderbb under `/brain_storming/mcoder`.
     - To be organised into main branch soon.
 
 5. The working tANS solution, compiled for both a single 1x compute unit factor and 2x compute unit factor.
