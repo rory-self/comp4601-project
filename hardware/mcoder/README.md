@@ -57,9 +57,10 @@ v++ --link --target hw --platform "$PLATFORM" --config link.cfg \
 
 # 4. hosts (cross-compile)
 cd ../src
-"$CXX_ARM" $ARM_CXXFLAGS -I. -DMC_KWAY=8 bench_host.cpp mcoder_dec.cpp \
+#    -I../../common brings in overhead.h (setup + DMA accounting)
+"$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common -DMC_KWAY=8 bench_host.cpp mcoder_dec.cpp \
     -o ../bin/bench_host_arm $ARM_LDFLAGS
-"$CXX_ARM" $ARM_CXXFLAGS -I. -DMC_KWAY=8 demo_host.cpp mcoder_enc.cpp mcoder_dec.cpp \
+"$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common -DMC_KWAY=8 demo_host.cpp mcoder_enc.cpp mcoder_dec.cpp \
     -o ../bin/demo_arm $ARM_LDFLAGS
 
 # 5. run

@@ -29,6 +29,36 @@ bin/     prebuilt bitstream + cross-compiled aarch64 hosts, so the demo runs
 data/    inputs
 results/ the measurements
 ```
+plus one shared file, [`common/overhead.h`](common/overhead.h), included by every
+host (`-I../../common`).
+
+## Overhead: the throughput column is not the whole story
+
+The table above is measured with `chrono` around the kernel call. That is the
+right boundary for judging a datapath and the wrong one for judging whether
+offloading was worth doing, because it excludes everything the CPU never has to
+do: opening the device, pushing a ~7.8 MB bitstream into the PL, allocating and
+mapping DMA buffers, and copying the payload across the bus and back.
+
+Every host now reports **the same workload at three boundaries**:
+
+| boundary | includes | answers |
+|---|---|---|
+| 1. compute only | the kernel call | how fast is the datapath? *(the table above)* |
+| 2. + host↔device DMA | + memcpy, both `sync`s | what does one offloaded call really cost? |
+| 3. + one-time setup | + device open, xclbin load, `xrt::bo` alloc | what does a user running this once experience? |
+
+and the **break-even payload**: setup does not scale with the data, so the FPGA
+overtakes the ARM only once the per-byte saving has repaid the fixed cost.
+Below break-even the CPU finishes first; above it the gap widens without limit.
+Boundary 1 flatters the accelerator, boundary 3 flatters the CPU, and break-even
+is the number that actually decides between them.
+
+`demo_host` (and `demo_arm`) prints boundaries 1–3 plus break-even, since it has
+a software baseline to compare against. `bench_host` and `multi_host` have none,
+so they print the breakdown plus an **amortisation curve** — the effective
+throughput at 1, 10, 100, … payloads per process, converging on the steady-state
+figure once setup is spread thin enough to disappear.
 
 ## Run any of them
 ```sh

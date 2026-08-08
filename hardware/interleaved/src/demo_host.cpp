@@ -6,14 +6,18 @@
 //   - HARDWARE: the time-interleaved kernel on the FPGA.
 //   - times both around only the encode, verifies each is lossless, prints the
 //     throughput + speedup table.
+//   - reports the speedup at three boundaries (see ../../common/overhead.h):
+//     kernel only, kernel + DMA, and end-to-end including device open, xclbin
+//     load and buffer allocation -- plus the break-even payload size.
 // Build (C++20): aarch64 cross-compile against the XRT sysroot, linking
-// arith5.cpp (-DKWAY=1) as the software reference.
+// arith5.cpp (-DKWAY=1) as the software reference, with -I../../common.
 
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <numeric>
 #include <span>
@@ -25,6 +29,7 @@
 #include "xrt/xrt_kernel.h"
 
 #include "arith3.h"   // coder params shared by arith5 and the interleaved kernel
+#include "overhead.h"
 
 namespace {
 
@@ -135,15 +140,32 @@ int main(int argc, char** argv) {
     }
 
     // ---------- HARDWARE (FPGA): interleaved kernel ----------
+    // Setup timed leg by leg.  None of this appears in the per-call figures
+    // below, and all of it is real: it is what the CPU path does not have to do.
+    ovh::Breakdown oh;
+    oh.bytes = n;
+
+    auto t = ovh::Clock::now();
     auto device = xrt::device(0);
+    oh.device_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     const auto uuid = device.load_xclbin(xclbin);
+    oh.xclbin_load = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto kernel = xrt::kernel(device, uuid, "arith_kernel");
+    oh.kernel_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto bo_in  = xrt::bo(device, kMaxIn,      kernel.group_id(0));
     auto bo_out = xrt::bo(device, kMaxOut,     kernel.group_id(2));
     auto bo_len = xrt::bo(device, sizeof(int), kernel.group_id(3));
     auto* in  = bo_in.map<byte*>();
     auto* out = bo_out.map<byte*>();
     auto* len = bo_len.map<int*>();
+    oh.bo_alloc = ovh::us_since(t);
+
     std::copy(input.begin(), input.end(), in);
     bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
@@ -160,8 +182,30 @@ int main(int argc, char** argv) {
         hw_us.push_back(std::chrono::duration<double, std::micro>(Clock::now() - t0).count());
     }
 
+    // ---------- the DMA the kernel-only loop above leaves out ----------
+    // Same call, but paying to get the payload in and the result out, which any
+    // real caller must.  Averaged over `iters` for the same stability.
+    double h2d = 0, d2h = 0;
+    for (int k = 0; k < iters; ++k) {
+        auto t0 = ovh::Clock::now();
+        std::memcpy(in, input.data(), n);
+        bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        h2d += ovh::us_since(t0);
+
+        kernel(bo_in, n, bo_out, bo_len).wait();   // untimed: boundary 1 above
+
+        t0 = ovh::Clock::now();
+        bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        bo_len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        d2h += ovh::us_since(t0);
+    }
+    oh.h2d = h2d / iters;
+    oh.d2h = d2h / iters;
+
     auto mean = [](std::vector<double>& v){ std::ranges::sort(v); return std::reduce(v.begin(), v.end()) / v.size(); };
     const double sw = mean(sw_us), hw = mean(hw_us);
+    oh.sw_compute = sw;
+    oh.hw_compute = hw;   // the kernel-only mean, so boundary 1 == the table below
 
     std::cout << "============ SW reference (ARM) vs HW (FPGA interleaved) ============\n"
               << "input                  : " << n << " symbols (compressible pattern)\n"
@@ -172,7 +216,10 @@ int main(int argc, char** argv) {
               << "--------------------------------------------------------------------\n"
               << "ARM  software (arith5) : " << sw << " us/call   (" << (n / sw) << " M sym/s)\n"
               << "FPGA interleaved kernel: " << hw << " us/call   (" << (n / hw) << " M sym/s)\n"
-              << "SPEEDUP (HW vs SW)     : " << (sw / hw) << "x\n"
+              << "SPEEDUP (HW vs SW)     : " << (sw / hw) << "x   [kernel only, no DMA, no setup]\n"
               << "====================================================================\n";
+
+    ovh::report_overhead(oh);
+    ovh::report_speedup(oh);
     return (sw_ok && hw_ok) ? 0 : 1;
 }

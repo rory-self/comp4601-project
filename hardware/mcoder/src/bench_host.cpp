@@ -4,6 +4,11 @@
  *   - loads the xclbin and runs arith_kernel(in, n, out, out_len) on the PL
  *   - verifies losslessness by decoding the board's output on the host
  *   - profiles with std::chrono around ONLY the kernel enqueue + wait
+ *   - AND accounts for what that boundary leaves out: device open, xclbin load,
+ *     buffer allocation, the input file read, and the per-call DMA both ways.
+ *     No software baseline lives here (demo_host has that), so the overhead is
+ *     reported as an amortisation curve -- how much data one process must push
+ *     before the fixed setup stops dominating.
  *
  * Two deliberate differences from board/host.cpp (V5's host):
  *
@@ -39,6 +44,7 @@
  * be dropped into a Vitis IDE component directory unchanged.  See
  * host/Makefile and mcoder_host/UserConfig.cmake. */
 #include "mcoder.h"
+#include "overhead.h"
 
 #ifndef MC_NO_XRT
 #include "xrt/xrt_bo.h"
@@ -88,9 +94,12 @@ int main(int argc, char **argv) {
     (void)dev; (void)mhz; (void)xclbin;   /* only the XRT path uses these */
 #endif
 
+    ovh::Breakdown oh;
+
     std::vector<mc_byte> src(MC_MAX_IN, 0);
     std::string src_desc;
     if (!file.empty()) {
+        ovh::Scope rd(oh.input_read);          /* both paths pay this */
         std::ifstream f(file, std::ios::binary);
         if (!f) { std::cerr << "cannot open " << file << "\n"; return 2; }
         f.read(reinterpret_cast<char *>(src.data()), N);
@@ -113,16 +122,26 @@ int main(int argc, char **argv) {
     auto run_once = [&]() { clen = mc_encode(hin, N, hout); };
 #else
     std::cout << "open device " << dev << ", load " << xclbin << "\n";
+    auto t = ovh::Clock::now();
     auto device = xrt::device(dev);
-    auto uuid   = device.load_xclbin(xclbin);
-    auto krnl   = xrt::kernel(device, uuid, "arith_kernel");
+    oh.device_open = ovh::us_since(t);
 
+    t = ovh::Clock::now();
+    auto uuid   = device.load_xclbin(xclbin);
+    oh.xclbin_load = ovh::us_since(t);
+
+    t = ovh::Clock::now();
+    auto krnl   = xrt::kernel(device, uuid, "arith_kernel");
+    oh.kernel_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto bo_in  = xrt::bo(device, MC_MAX_IN,   krnl.group_id(0));
     auto bo_out = xrt::bo(device, MC_MAX_OUT,  krnl.group_id(2));
     auto bo_len = xrt::bo(device, sizeof(int), krnl.group_id(3));
     auto hin  = bo_in.map<mc_byte *>();
     auto hout = bo_out.map<mc_byte *>();
     auto hlen = bo_len.map<int *>();
+    oh.bo_alloc = ovh::us_since(t);
 
     memcpy(hin, src.data(), N);
     bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
@@ -191,6 +210,41 @@ int main(int argc, char **argv) {
     std::cout << "                   (cosim predicted 6.67 at K=8, of which the\n"
                  "                    coder is only 1.0 -- the rest is data movement)\n";
     std::cout << "vs V5 on fabric  : " << (msps / 13.29) << "x  (V5 measured 13.29 M sym/s)\n";
+
+    /* ---- the same call with its data movement, timed by leg ----
+     * The loop above skips both DMAs, which no real caller can.  Averaged over
+     * `iters` so the per-leg figures are as stable as the kernel figure. */
+    oh.bytes = N;
+    double h2d = 0, comp = 0, d2h = 0;
+    for (int k = 0; k < iters; k++) {
+        t = ovh::Clock::now();
+        memcpy(hin, src.data(), N);
+        bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        h2d += ovh::us_since(t);
+
+        t = ovh::Clock::now();
+        run_once();
+        comp += ovh::us_since(t);
+
+        t = ovh::Clock::now();
+        bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        bo_len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        d2h += ovh::us_since(t);
+    }
+    oh.h2d = h2d / iters;
+    oh.hw_compute = comp / iters;
+    oh.d2h = d2h / iters;
+
+    std::cout << "\n=== one call WITH its data movement ===\n";
+    std::cout << "kernel only      : " << oh.hw_compute << " us  (" << (N / oh.hw_compute) << " M symbols/s)\n";
+    std::cout << "kernel + DMA     : " << oh.hw_offload() << " us  (" << (N / oh.hw_offload()) << " M symbols/s)\n";
+    std::cout << "cost of offload  : " << (100.0 * oh.hw_move() / oh.hw_offload())
+              << "% of the call is data movement\n";
+
+    ovh::report_overhead(oh);
+    ovh::report_amortised(oh);
+    std::cout << "(no software baseline here -- demo_host does the SW-vs-HW comparison\n"
+                 " with the same three boundaries.)\n";
 #endif
     return ok ? 0 : 1;
 }

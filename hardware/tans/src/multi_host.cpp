@@ -7,6 +7,12 @@
 // Question it answers: we sat at ~16% LUT / 34% BRAM with one kernel. Does
 // spending the idle chip on a second copy actually double throughput, or is
 // something shared (DDR bandwidth, XRT dispatch) the real limit?
+//
+// It also breaks the setup cost down per compute unit, because instancing has an
+// asymmetry worth seeing: the expensive part (loading the xclbin, programming
+// the PL) is paid ONCE however many CUs the bitstream holds, while each CU adds
+// only a kernel handle and its own buffers. So the second CU nearly doubles the
+// throughput while adding almost nothing to the fixed cost.
 
 #include <algorithm>
 #include <charconv>
@@ -25,6 +31,7 @@
 #include "xrt/xrt_device.h"
 #include "xrt/xrt_kernel.h"
 
+#include "overhead.h"
 #include "tans.h"
 #include "tans_table.h"
 
@@ -72,29 +79,58 @@ int main(int argc, char** argv) {
     int norm[256]; shared_norm(norm);
     tans::Dec dec; tans::build_dec(dec, norm, TANS_L);
 
+    ovh::Breakdown oh;
+
+    auto t = ovh::Clock::now();
     std::ifstream f(dir + "/file0.bin", std::ios::binary);
     std::vector<byte> data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    oh.input_read = ovh::us_since(t);
     if ((int)data.size() < kMaxIn) { std::cerr << "need file0.bin >= 16 KB\n"; return 2; }
 
+    t = ovh::Clock::now();
     auto device = xrt::device(0);
+    oh.device_open = ovh::us_since(t);
+
+    // Paid once, however many CUs the bitstream contains -- this is the number
+    // the per-CU costs below should be read against.
+    t = ovh::Clock::now();
     const auto uuid = device.load_xclbin(xclbin);
+    oh.xclbin_load = ovh::us_since(t);
 
     // Open each compute unit by name -- this is what makes them run concurrently.
+    double cu_setup[2] = {0, 0};
     std::vector<Unit> u;
     for (const char* cu : {"arith_kernel:{arith_kernel_1}", "arith_kernel:{arith_kernel_2}"}) {
+        t = ovh::Clock::now();
         xrt::kernel k(device, uuid, cu);
+        const double kd = ovh::us_since(t);
+        oh.kernel_open += kd;
+
+        t = ovh::Clock::now();
         xrt::bo bi(device, kMaxIn, k.group_id(0));
         xrt::bo bo(device, kOutBytes, k.group_id(2));
         xrt::bo bl(device, sizeof(int), k.group_id(3));
         Unit x{k, bi, bo, bl, bi.map<byte*>(), bo.map<byte*>(), bl.map<int*>()};
+        const double bd = ovh::us_since(t);
+        oh.bo_alloc += bd;
+
+        t = ovh::Clock::now();
         std::memcpy(x.pin, data.data(), kMaxIn);
         x.in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        oh.h2d += ovh::us_since(t);
+
+        cu_setup[u.size()] = kd + bd;      // this CU's share of the FIXED setup
         u.push_back(std::move(x));
     }
     std::cout << "opened " << u.size() << " compute units from " << xclbin << "\n\n";
 
+    // verify() is called for both the 1-CU and 2-CU runs, so the D2H legs are
+    // averaged and scaled to one pass over both CUs at the end.
+    double d2h_sum = 0; int d2h_n = 0;
     auto verify = [&](Unit& x) {
+        const auto td = ovh::Clock::now();
         x.out.sync(XCL_BO_SYNC_BO_FROM_DEVICE); x.len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        d2h_sum += ovh::us_since(td); ++d2h_n;
         std::vector<byte> rec; rec.reserve(kMaxIn);
         for (int c = 0; c < kKWay; ++c) {
             const int rlen = x.pout[4*c] | (x.pout[4*c+1] << 8);
@@ -138,5 +174,18 @@ int main(int argc, char** argv) {
               << "--------------------------------------------------------------\n"
               << "scaling: " << (tp2/tp1) << "x   (2.00x = perfect)\n"
               << "==============================================================\n";
+
+    // Overhead accounting for the 2-CU configuration: one pass = both CUs each
+    // coding one 16 KB block.
+    oh.bytes      = 2L * kMaxIn;
+    oh.hw_compute = us2;
+    oh.d2h        = d2h_n ? 2.0 * d2h_sum / d2h_n : 0.0;
+    ovh::report_overhead(oh);
+    std::printf("\n  per-CU setup      CU1 %.1f us   CU2 %.1f us   (kernel handle + buffers)\n",
+                cu_setup[0], cu_setup[1]);
+    std::printf("  the xclbin load (%.1f us) is paid once for both, so the second CU buys\n"
+                "  %.2fx the throughput for %.1f%% more fixed setup\n",
+                oh.xclbin_load, tp2 / tp1, 100.0 * cu_setup[1] / (oh.hw_setup() - cu_setup[1]));
+    ovh::report_amortised(oh);
     return (ok1 && ok2) ? 0 : 1;
 }

@@ -46,7 +46,10 @@ v++ --link --target hw --platform "$PLATFORM" --config link.cfg \
 #    2 compute units: use link_multi.cfg -> ../bin/arith_multi.xclbin
 
 # 4. host (the board has no compiler -- cross-compile here)
-cd ../src && "$CXX_ARM" $ARM_CXXFLAGS -I. demo_host.cpp -o ../bin/demo_host_arm $ARM_LDFLAGS
+#    -I../../common brings in overhead.h (setup + DMA accounting)
+cd ../src
+"$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common demo_host.cpp -o ../bin/demo_host_arm $ARM_LDFLAGS
+"$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common multi_host.cpp -o ../bin/multi_host_arm $ARM_LDFLAGS
 
 # 5. run on the board
 cd .. && ../../run_on_board.sh tans      # or: ../../run_on_board.sh multi

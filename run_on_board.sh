@@ -106,6 +106,9 @@ if [ "$1" = "all" ]; then
   echo "* vs each design's OWN software baseline (multi = CU scaling, not a speedup)."
 echo "Note: those baselines differ, so compare THROUGHPUT across rows, not ratios:"
   echo "  bit-wise arith 3.5 M sym/s  vs  byte-wise tANS 56 M sym/s."
+  echo "Note: this column EXCLUDES setup (device open, xclbin load, buffer alloc)."
+  echo "  Each run above also prints the same workload at three boundaries --"
+  echo "  compute only / + DMA / + setup -- and its break-even payload size."
   else
   run_one "$1"
 fi

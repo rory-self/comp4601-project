@@ -8,6 +8,10 @@
  *   - decodes the FPGA's output on the CPU and checks the reconstruction is
  *     pixel-perfect
  *   - prints ASCII previews + a stats table, writes reconstructed.pgm
+ *   - reports the speedup at three boundaries (see ../../common/overhead.h):
+ *     kernel only, kernel + DMA, and end-to-end including the image read, the
+ *     device open, the xclbin load and buffer allocation -- plus the break-even
+ *     payload size, which is the honest answer to "was offloading worth it?"
  *
  * Same structure as demo/demo_host.cpp (the V5 demo) so the two are directly
  * comparable, with three differences:
@@ -43,6 +47,7 @@
 #include <algorithm>
 
 #include "mcoder.h"
+#include "overhead.h"
 
 #ifndef MC_NO_XRT
 #include "xrt/xrt_bo.h"
@@ -147,6 +152,8 @@ int main(int argc, char **argv) {
     }
 
     /* ---- read P5 (grayscale) or P6 (colour) ---- */
+    ovh::Breakdown oh;
+    auto tio = ovh::Clock::now();
     std::ifstream f(img, std::ios::binary);
     if (!f) { std::cerr << "cannot open " << img << "\n"; return 1; }
     std::string magic; int W, H, maxv;
@@ -160,7 +167,9 @@ int main(int argc, char **argv) {
     std::vector<mc_byte> px((size_t)W * H * ch);
     f.read((char *)px.data(), (long)px.size());
     f.close();
+    oh.input_read = ovh::us_since(tio);        /* both paths pay this */
     int total = W * H * ch, nblk = (total + MC_MAX_IN - 1) / MC_MAX_IN;
+    oh.bytes = total;
 
     std::cout << "========== M-CODER (V7) IMAGE COMPRESSION DEMO ==========\n";
     std::cout << "image: " << img << "  " << W << "x" << H << " = " << total
@@ -181,29 +190,53 @@ int main(int argc, char **argv) {
     }
     auto tc1 = std::chrono::high_resolution_clock::now();
     double cpu_us = std::chrono::duration<double, std::micro>(tc1 - tc0).count();
+    oh.sw_compute = cpu_us;
 
     /* ---- FPGA compress (timed) ---- */
     double fpga_us = 0;
     bool have_fpga = false;
 #ifndef MC_NO_XRT
+    /* Setup, timed leg by leg.  None of it shows up in the kernel figure, and
+     * all of it is work the CPU path never has to do. */
+    auto t = ovh::Clock::now();
     auto device = xrt::device(0);
+    oh.device_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto uuid   = device.load_xclbin(xclbin);
+    oh.xclbin_load = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto krnl   = xrt::kernel(device, uuid, "arith_kernel");
+    oh.kernel_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto bo_in  = xrt::bo(device, MC_MAX_IN,   krnl.group_id(0));
     auto bo_out = xrt::bo(device, MC_MAX_OUT,  krnl.group_id(2));
     auto bo_len = xrt::bo(device, sizeof(int), krnl.group_id(3));
     auto hin = bo_in.map<mc_byte *>(); auto hout = bo_out.map<mc_byte *>();
     auto hlen = bo_len.map<int *>();
+    oh.bo_alloc = ovh::us_since(t);
 
+    /* Same loop as before, split into three accumulators so the DMA can be
+     * separated from the coding; the total is unchanged. */
     auto tf0 = std::chrono::high_resolution_clock::now();
     for (int b = 0; b < nblk; b++) {
         int off = b * MC_MAX_IN, n = std::min(MC_MAX_IN, total - off);
+        t = ovh::Clock::now();
         memcpy(hin, px.data() + off, n);
         bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        oh.h2d += ovh::us_since(t);
+
+        t = ovh::Clock::now();
         auto r = krnl(bo_in, n, bo_out, bo_len); r.wait();
+        oh.hw_compute += ovh::us_since(t);
+
+        t = ovh::Clock::now();
         bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
         bo_len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
         comp_fpga[b].assign(hout, hout + hlen[0]);
+        oh.d2h += ovh::us_since(t);
     }
     auto tf1 = std::chrono::high_resolution_clock::now();
     fpga_us = std::chrono::duration<double, std::micro>(tf1 - tf0).count();
@@ -276,7 +309,8 @@ int main(int argc, char **argv) {
         double msps = total / fpga_us;
         std::cout << "FPGA     compress  : " << fpga_us << " us  ("
                   << msps << " M symbols/s)\n";
-        std::cout << "SPEEDUP (FPGA/CPU) : " << (cpu_us / fpga_us) << "x\n";
+        std::cout << "SPEEDUP (FPGA/CPU) : " << (cpu_us / fpga_us)
+                  << "x   [kernel + DMA, setup excluded]\n";
         std::cout << "-------------------------------------------------------\n";
         std::cout << "implied cyc/byte   : " << (mhz / msps) << "  at " << mhz << " MHz\n";
         std::cout << "vs V5 on fabric    : " << (msps / V5_MSPS)
@@ -292,5 +326,10 @@ int main(int argc, char **argv) {
     std::cout << "wrote " << rname;
     if (!mcz.empty()) std::cout << " and " << mcz << "  (decompress with:  -d " << mcz << ")";
     std::cout << "\n";
+
+    if (have_fpga) {
+        ovh::report_overhead(oh);
+        ovh::report_speedup(oh);
+    }
     return lossless ? 0 : 1;
 }

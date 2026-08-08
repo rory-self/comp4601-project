@@ -50,8 +50,9 @@ v++ --link --target hw --platform "$PLATFORM" --config link.cfg \
 
 # 4. hosts (cross-compile; the board has no compiler)
 cd ../src
-"$CXX_ARM" $ARM_CXXFLAGS -I. bench_host.cpp -o ../bin/bench_host_arm $ARM_LDFLAGS
-"$CXX_ARM" $ARM_CXXFLAGS -I. -I../../replication_full/src demo_host.cpp \
+#    -I../../common brings in overhead.h (setup + DMA accounting)
+"$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common bench_host.cpp -o ../bin/bench_host_arm $ARM_LDFLAGS
+"$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common -I../../replication_full/src demo_host.cpp \
     ../../replication_full/src/arith5.cpp -DKWAY=1 -o ../bin/demo_host_arm $ARM_LDFLAGS
 
 # 5. run

@@ -9,6 +9,11 @@
 //
 // Workload = files that SHARE one frequency table (the tree method's use case);
 // the table baked into the kernel was built from that shared distribution.
+//
+// Timing is reported at three boundaries (see ../../common/overhead.h): kernel
+// only, kernel + host<->device DMA, and end-to-end including reading the files,
+// opening the device, loading the xclbin and allocating buffers -- plus the
+// break-even payload, i.e. how much data makes the offload worth its setup.
 
 #include <algorithm>
 #include <charconv>
@@ -27,6 +32,7 @@
 #include "xrt/xrt_device.h"
 #include "xrt/xrt_kernel.h"
 
+#include "overhead.h"
 #include "tans.h"        // normalize / build_enc / build_dec (host-side model)
 #include "tans_table.h"  // TANS_L, the baked table (same one the kernel uses)
 
@@ -105,11 +111,22 @@ int main(int argc, char** argv) {
     const std::string mode{arg_of(args, "-m", "both")};   // sw | hw | both
     const int secs = int_arg(args, "-t", 10);             // sustained-load seconds
 
+    ovh::Breakdown oh;
+
+    // Building the entropy table is the tree method's one-time cost. Timed for
+    // the record, but NOT charged to the software path: sw_one() below reads the
+    // same pre-baked TANS_* arrays the kernel does, so no timed encode depends
+    // on it. Its hardware equivalent is baked into the bitstream and therefore
+    // already paid inside the xclbin load.
+    double table_us = 0;
+    auto t = ovh::Clock::now();
     int norm[256]; shared_norm(norm);
     tans::Enc enc; tans::build_enc(enc, norm, TANS_L);
-    tans::Dec dec; tans::build_dec(dec, norm, TANS_L);
+    table_us = ovh::us_since(t);
+    tans::Dec dec; tans::build_dec(dec, norm, TANS_L);   // verification only
 
     // Load the demo files that share the frequency table.
+    t = ovh::Clock::now();
     std::vector<std::vector<byte>> files;
     for (int i = 0; i < 4; ++i) {
         std::ifstream f(dir + "/file" + std::to_string(i) + ".bin", std::ios::binary);
@@ -117,17 +134,29 @@ int main(int argc, char** argv) {
         std::vector<byte> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
         if (!d.empty()) files.push_back(std::move(d));
     }
+    oh.input_read = ovh::us_since(t);        // both paths pay this
     if (files.empty()) { std::cerr << "no demo files found in " << dir << "\n"; return 2; }
 
+    t = ovh::Clock::now();
     auto device = xrt::device(0);
+    oh.device_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     const auto uuid = device.load_xclbin(xclbin);
+    oh.xclbin_load = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto kernel = xrt::kernel(device, uuid, "arith_kernel");
+    oh.kernel_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto bo_in  = xrt::bo(device, kMaxIn,      kernel.group_id(0));
     auto bo_out = xrt::bo(device, kOutBytes,   kernel.group_id(2));
     auto bo_len = xrt::bo(device, sizeof(int), kernel.group_id(3));
     auto* in  = bo_in.map<byte*>();
     auto* out = bo_out.map<byte*>();
     auto* len = bo_len.map<int*>();
+    oh.bo_alloc = ovh::us_since(t);
 
     // Sustained-load modes: run ONE engine flat out for -t seconds so board power
     // can be sampled cleanly (energy per byte = power x time / bytes).
@@ -174,13 +203,23 @@ int main(int argc, char** argv) {
             sw_us += std::chrono::duration<double, std::micro>(Clock::now() - t0).count() / iters;
 
             // ---- hardware (FPGA) ----
+            // The DMA legs are timed once per block -- one H2D and one D2H is
+            // exactly what one pass over this payload costs, and the kernel loop
+            // below (which repeats the same buffers `iters` times) charges none
+            // of it.
+            t = ovh::Clock::now();
             std::memcpy(in, src, kMaxIn);
             bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            oh.h2d += ovh::us_since(t);
+
             kernel(bo_in, kMaxIn, bo_out, bo_len).wait();          // warm
             const auto t1 = Clock::now();
             for (int r = 0; r < iters; ++r) kernel(bo_in, kMaxIn, bo_out, bo_len).wait();
             hw_us += std::chrono::duration<double, std::micro>(Clock::now() - t1).count() / iters;
+
+            t = ovh::Clock::now();
             bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE); bo_len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+            oh.d2h += ovh::us_since(t);
             comp += len[0];
 
             // ---- verify the board's output decodes back to the input ----
@@ -219,7 +258,16 @@ int main(int argc, char** argv) {
               << "lossless          : " << (all_lossless ? "YES (board output decoded == input)" : "NO") << "\n"
               << "ARM  software     : " << sw_us_tot << " us  (" << (bytes_tot / sw_us_tot) << " M sym/s)\n"
               << "FPGA tANS kernel  : " << hw_us_tot << " us  (" << (bytes_tot / hw_us_tot) << " M sym/s)\n"
-              << "SPEEDUP           : " << (sw_us_tot / hw_us_tot) << "x\n"
+              << "SPEEDUP           : " << (sw_us_tot / hw_us_tot) << "x   [kernel only, no DMA, no setup]\n"
               << "=================================================================\n";
+
+    oh.bytes      = bytes_tot;
+    oh.sw_compute = sw_us_tot;
+    oh.hw_compute = hw_us_tot;
+    ovh::report_overhead(oh);
+    std::printf("  static table build (host) %12.1f us   -- not charged to either path:\n"
+                "                              the kernel has it baked into the bitstream and\n"
+                "                              sw_one() reads the same pre-baked arrays\n", table_us);
+    ovh::report_speedup(oh);
     return all_lossless ? 0 : 1;
 }

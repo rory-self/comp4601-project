@@ -6,7 +6,11 @@
 //     (b) the FPGA kernel, timing each
 //   - decompresses (CPU) and checks the reconstruction is pixel-perfect (lossless)
 //   - prints an ASCII preview + a stats table, and writes reconstructed.pgm
-// Build (C++20): aarch64 cross-compile against the XRT sysroot, with arith5.cpp.
+//   - reports the speedup at three boundaries (see ../../common/overhead.h):
+//     kernel only, kernel + DMA, and end-to-end including device open, xclbin
+//     load and buffer allocation -- plus the break-even payload size
+// Build (C++20): aarch64 cross-compile against the XRT sysroot, with arith5.cpp
+//                and -I../../common.
 
 #include <algorithm>
 #include <array>
@@ -22,6 +26,8 @@
 #include "xrt/xrt_bo.h"
 #include "xrt/xrt_device.h"
 #include "xrt/xrt_kernel.h"
+
+#include "overhead.h"
 
 namespace {
 
@@ -140,25 +146,43 @@ int main(int argc, char** argv) {
     const std::string img_path = arg_of(args, "-i", "image.pgm");
     const std::string xclbin   = arg_of(args, "-x", "arith.bin");
 
+    ovh::Breakdown oh;
+
+    auto t = ovh::Clock::now();
     const Image img = read_pgm(img_path);
+    oh.input_read = ovh::us_since(t);          // both paths pay this
+
     const int total = img.w * img.h;
     const int nblk  = (total + kMaxIn - 1) / kMaxIn;
+    oh.bytes = total;
 
     std::cout << "================ IMAGE COMPRESSION DEMO ================\n"
               << "image: " << img_path << "  " << img.w << 'x' << img.h << " = " << total
               << " bytes, " << nblk << " blocks of <=" << kMaxIn << "\n\n";
     ascii_preview(img, "ORIGINAL");
 
-    // ---- FPGA setup ----
+    // ---- FPGA setup (timed leg by leg: this is what offload costs before any
+    //      pixel is coded, and none of it appears in the kernel-only figure) ----
+    t = ovh::Clock::now();
     auto device = xrt::device(0);
+    oh.device_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     const auto uuid = device.load_xclbin(xclbin);
+    oh.xclbin_load = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto kernel = xrt::kernel(device, uuid, "arith_kernel");
+    oh.kernel_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto bo_in  = xrt::bo(device, kMaxIn,      kernel.group_id(0));
     auto bo_out = xrt::bo(device, kMaxOut,     kernel.group_id(2));
     auto bo_len = xrt::bo(device, sizeof(int), kernel.group_id(3));
     auto* in  = bo_in.map<byte*>();
     auto* out = bo_out.map<byte*>();
     auto* len = bo_len.map<int*>();
+    oh.bo_alloc = ovh::us_since(t);
 
     std::vector<std::vector<byte>> comp_cpu(nblk), comp_fpga(nblk);
     std::array<byte, kMaxOut> obuf{};
@@ -171,17 +195,28 @@ int main(int argc, char** argv) {
         comp_cpu[b].assign(obuf.begin(), obuf.begin() + cl);
     }
     const double cpu_us = std::chrono::duration<double, std::micro>(Clock::now() - tc0).count();
+    oh.sw_compute = cpu_us;
     long comp_bytes = 0; for (const auto& v : comp_cpu) comp_bytes += static_cast<long>(v.size());
 
-    // ---- FPGA compress (timed) ----
+    // ---- FPGA compress (timed, split by leg) ----
+    // Same total as before -- the loop is unchanged, only broken into three
+    // accumulators so the DMA can be separated from the coding.
     const auto tf0 = Clock::now();
     for (int b = 0; b < nblk; ++b) {
         const int off = b * kMaxIn, n = std::min(kMaxIn, total - off);
+        t = ovh::Clock::now();
         std::memcpy(in, img.px.data() + off, n);
         bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        oh.h2d += ovh::us_since(t);
+
+        t = ovh::Clock::now();
         kernel(bo_in, n, bo_out, bo_len).wait();
+        oh.hw_compute += ovh::us_since(t);
+
+        t = ovh::Clock::now();
         bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE); bo_len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
         comp_fpga[b].assign(out, out + len[0]);
+        oh.d2h += ovh::us_since(t);
     }
     const double fpga_us = std::chrono::duration<double, std::micro>(Clock::now() - tf0).count();
 
@@ -210,8 +245,11 @@ int main(int argc, char** argv) {
               << "---------------------------------------------------\n"
               << "ARM CPU  compress  : " << cpu_us  << " us  (" << (total / cpu_us)  << " MB/s)\n"
               << "FPGA     compress  : " << fpga_us << " us  (" << (total / fpga_us) << " MB/s)\n"
-              << "SPEEDUP (FPGA/CPU) : " << (cpu_us / fpga_us) << "x\n"
+              << "SPEEDUP (FPGA/CPU) : " << (cpu_us / fpga_us) << "x   [kernel + DMA, setup excluded]\n"
               << "===================================================\n"
               << "wrote reconstructed.pgm\n";
+
+    ovh::report_overhead(oh);
+    ovh::report_speedup(oh);
     return lossless ? 0 : 1;
 }

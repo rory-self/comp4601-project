@@ -4,13 +4,19 @@
 //   - loads the xclbin and runs arith_kernel(in, n, out, out_len) on the PL
 //   - verifies losslessness (decode the board's output, compare to the input)
 //   - profiles with std::chrono around ONLY the kernel enqueue + wait
-// Build (C++20): aarch64 cross-compile against the XRT sysroot.
+//   - AND accounts for everything that boundary excludes: device open, xclbin
+//     load, buffer allocation, and the per-call DMA in both directions.  There
+//     is no software baseline here (that is demo_host's job), so the overhead is
+//     reported as an amortisation curve: how much data one process must push
+//     before the fixed setup stops dominating.
+// Build (C++20): aarch64 cross-compile against the XRT sysroot, -I../../common.
 
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <numeric>
 #include <span>
@@ -20,6 +26,8 @@
 #include "xrt/xrt_bo.h"
 #include "xrt/xrt_device.h"
 #include "xrt/xrt_kernel.h"
+
+#include "overhead.h"
 
 namespace {
 
@@ -135,21 +143,39 @@ int main(int argc, char** argv) {
     const int iters = int_arg(args, "-n", 2000);
     const int n     = std::min(int_arg(args, "-N", 4095), kMaxIn);
 
+    // Input: a compressible pattern (matches the co-sim workload).  Generated
+    // host-side and copied in later, so the copy can be charged to transfer
+    // rather than hidden inside payload generation.
+    std::vector<byte> src(n);
+    for (int i = 0; i < n; ++i) src[i] = static_cast<byte>('a' + (i % 7));
+
+    ovh::Breakdown oh;
+    oh.bytes = n;
+
     std::cout << "Open device " << dev << "\nLoad xclbin " << xclbin << '\n';
+    auto t = ovh::Clock::now();
     auto device = xrt::device(dev);
+    oh.device_open = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     const auto uuid = device.load_xclbin(xclbin);
+    oh.xclbin_load = ovh::us_since(t);
+
+    t = ovh::Clock::now();
     auto kernel = xrt::kernel(device, uuid, "arith_kernel");
+    oh.kernel_open = ovh::us_since(t);
 
     // Buffer args sit at kernel indices 0 (in), 2 (out), 3 (out_len); index 1 is the scalar n.
+    t = ovh::Clock::now();
     auto bo_in  = xrt::bo(device, kMaxIn,      kernel.group_id(0));
     auto bo_out = xrt::bo(device, kMaxOut,     kernel.group_id(2));
     auto bo_len = xrt::bo(device, sizeof(int), kernel.group_id(3));
     auto* in  = bo_in.map<byte*>();
     auto* out = bo_out.map<byte*>();
     auto* len = bo_len.map<int*>();
+    oh.bo_alloc = ovh::us_since(t);
 
-    // Input: a compressible pattern (matches the co-sim workload).
-    for (int i = 0; i < n; ++i) in[i] = static_cast<byte>('a' + (i % 7));
+    std::memcpy(in, src.data(), n);
     bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
     // --- correctness run ---
@@ -189,5 +215,39 @@ int main(int argc, char** argv) {
               << "min/max per call : " << samples.front() << " / " << samples.back() << " us\n"
               << "per-symbol       : " << (mean * 1000.0 / n) << " ns/sym\n"
               << "throughput       : " << (n / mean) << " M symbols/s\n";
+
+    // --- the same call with its data movement, timed by leg ---
+    // A real caller cannot skip these: the payload has to reach the device and
+    // the compressed bytes have to come back.  Averaged over `iters` so the
+    // per-leg figures are as stable as the kernel figure above.
+    double h2d = 0, comp = 0, d2h = 0;
+    for (int k = 0; k < iters; ++k) {
+        t = ovh::Clock::now();
+        std::memcpy(in, src.data(), n);
+        bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        h2d += ovh::us_since(t);
+
+        t = ovh::Clock::now();
+        kernel(bo_in, n, bo_out, bo_len).wait();
+        comp += ovh::us_since(t);
+
+        t = ovh::Clock::now();
+        bo_out.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        bo_len.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        d2h += ovh::us_since(t);
+    }
+    oh.h2d = h2d / iters;
+    oh.hw_compute = comp / iters;
+    oh.d2h = d2h / iters;
+
+    std::cout << "\n=== one call WITH its data movement ===\n"
+              << "kernel only      : " << oh.hw_compute << " us  (" << (n / oh.hw_compute) << " M symbols/s)\n"
+              << "kernel + DMA     : " << oh.hw_offload() << " us  (" << (n / oh.hw_offload()) << " M symbols/s)\n"
+              << "cost of offload  : " << (100.0 * oh.hw_move() / oh.hw_offload()) << "% of the call is data movement\n";
+
+    ovh::report_overhead(oh);
+    ovh::report_amortised(oh);
+    std::cout << "(no software baseline here -- demo_host does the SW-vs-HW comparison\n"
+                 " with the same three boundaries.)\n";
     return lossless ? 0 : 1;
 }

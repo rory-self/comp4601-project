@@ -46,8 +46,9 @@ v++ --link --target hw --platform "$PLATFORM" --config link.cfg \
 
 # 4. hosts (cross-compile)
 cd ../src
-"$CXX_ARM" $ARM_CXXFLAGS -I. bench_host.cpp arith5.cpp -DKWAY=8 -o ../bin/bench_host_arm $ARM_LDFLAGS
-"$CXX_ARM" $ARM_CXXFLAGS -I. demo_host.cpp arith5.cpp -DKWAY=8 -o ../bin/demo_arm $ARM_LDFLAGS
+#    -I../../common brings in overhead.h (setup + DMA accounting)
+"$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common bench_host.cpp arith5.cpp -DKWAY=8 -o ../bin/bench_host_arm $ARM_LDFLAGS
+"$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common demo_host.cpp arith5.cpp -DKWAY=8 -o ../bin/demo_arm $ARM_LDFLAGS
 
 # 5. run
 cd .. && ../../run_on_board.sh rep
