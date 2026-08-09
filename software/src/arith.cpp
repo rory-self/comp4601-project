@@ -11,17 +11,21 @@ void write_length_to_header(std::vector<uint8_t>& out, uint64_t v);
 } // namespace
 
 auto arith_encode(const Payload& input) -> Payload {
-    FrequencyTable table = FrequencyTable::build(input);
+    return arith_encode(input.data(), input.size());
+}
+
+auto arith_encode(const uint8_t* data, const std::size_t len) -> Payload {
+    FrequencyTable table = FrequencyTable::build(data, len);
 
     std::vector<uint8_t> output;
-    write_length_to_header(output, static_cast<uint64_t>(input.size()));
+    write_length_to_header(output, static_cast<uint64_t>(len));
     const std::vector<uint8_t> table_serial = table.serialize();
     output.insert(output.end(), table_serial.cbegin(), table_serial.cend());
 
     Encoder encoder;
-    const std::size_t total_bytes = table.get_total();
-    for (uint8_t byte : input) {
-        const auto [cum_low, cum_high] = table.get_symbol_range(byte);
+    const uint32_t total_bytes = static_cast<uint32_t>(table.get_total());
+    for (std::size_t i = 0; i < len; ++i) {
+        const auto [cum_low, cum_high] = table.get_symbol_range(data[i]);
         encoder.encode_symbol(cum_low, cum_high, total_bytes);
     }
 
@@ -44,7 +48,6 @@ auto arith_decode(const Payload &input) -> Payload {
     Decoder decoder(input, offset);
     for (std::size_t i = 0; i < original_length; ++i) {
         const uint32_t scaled_value = decoder.get_current_count(total);
-
 
         const auto [byte, cum_low, cum_high] = table.get_symbol_for_cumulative(scaled_value);
         decoder.update(cum_low, cum_high, total);
