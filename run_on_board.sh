@@ -17,21 +17,53 @@ FW=/lib/firmware/xilinx/arith/arith.bin      # the Kria app slot we swap into
 # ---- ssh/scp without an interactive password prompt -------------------------
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 printf '#!/bin/sh\necho %s\n' "$BOARD_PW" > "$TMP/ap"; chmod +x "$TMP/ap"
-SSHOPT=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
-bssh(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w ssh "${SSHOPT[@]}" "$BOARD" "$@"; }
-bscp(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w scp "${SSHOPT[@]}" "$@"; }
+SSHOPT=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o NumberOfPasswordPrompts=1)
+# setsid+SSH_ASKPASS feeds the password without a TTY. If you use SSH keys instead,
+# this is harmless. If `setsid` is missing (e.g. macOS), fall back to plain ssh and
+# let it prompt.
+if command -v setsid >/dev/null 2>&1; then
+  bssh(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w ssh "${SSHOPT[@]}" "$BOARD" "$@"; }
+  bscp(){ SSH_ASKPASS="$TMP/ap" SSH_ASKPASS_REQUIRE=force setsid -w scp "${SSHOPT[@]}" "$@"; }
+else
+  bssh(){ ssh "${SSHOPT[@]}" "$BOARD" "$@"; }
+  bscp(){ scp "${SSHOPT[@]}" "$@"; }
+fi
+
+# ---- preflight: fail with something actionable, not "scp failed" ------------
+preflight(){
+  if ! bssh true >/dev/null 2>&1; then
+    cat >&2 <<MSG
+Cannot reach the board over ssh as: $BOARD
+
+  * different IP or user?   BOARD=user@ip ./run_on_board.sh ...
+  * different password?     BOARD_PW=yourpw ./run_on_board.sh ...
+  * board powered on and on the network? try:  ping ${BOARD#*@}
+  * using ssh keys? that works too -- this script only supplies a password
+                    when the board asks for one.
+MSG
+    return 1
+  fi
+  if ! bssh "test -d $(dirname $FW)" >/dev/null 2>&1; then
+    echo "Board reachable, but $(dirname $FW) is missing." >&2
+    echo "  The Kria 'arith' firmware slot is not installed on this board." >&2
+    return 1
+  fi
+  return 0
+}
 
 # ---- design registry:  key | dir | bitstream | host binary | extra files | args
+# field 7 = TIMING BOUNDARY the reported throughput uses. NEVER compare across
+# boundaries: "demo" includes host<->device transfer, "kernel" does not.
 designs=(
-  "rep|replication_full|bin/arith.bin|bin/demo_arm|data/image.pgm|-i image.pgm"
-  "mcoder|mcoder|bin/arith.bin|bin/demo_arm|data/image.pgm data/text_page.pgm|-i image.pgm"
-  "interleaved|interleaved|bin/arith.xclbin|bin/demo_host_arm||-N 4095 -n ITERS"
-  "tans|tans|bin/arith.xclbin|bin/demo_host_arm|data/file0.bin data/file1.bin data/file2.bin data/file3.bin|-d /tmp -n 200"
-  "multi|tans|bin/arith_multi.xclbin|bin/multi_host_arm|data/file0.bin|-d /tmp -n 300"
+  "rep|replication_full|bin/arith.bin|bin/demo_arm|data/image.pgm|-i image.pgm|demo"
+  "mcoder|mcoder|bin/arith.bin|bin/demo_arm|data/image.pgm data/text_page.pgm|-i image.pgm|demo"
+  "interleaved|interleaved|bin/arith.xclbin|bin/demo_host_arm||-N 4095 -n ITERS|kernel"
+  "tans|tans|bin/arith.xclbin|bin/demo_host_arm|data/file0.bin data/file1.bin data/file2.bin data/file3.bin|-d /tmp -n 200|kernel"
+  "multi|tans|bin/arith_multi.xclbin|bin/multi_host_arm|data/file0.bin|-d /tmp -n 300|kernel"
 )
 declare -A DESC=(
   [rep]="arith, K=8 replicated        (image demo: CPU vs FPGA, pixel-perfect)"
-  [mcoder]="table-driven M-coder, K=8    (no multiply, 0 DSP -- 2.34x rep on fabric)"
+  [mcoder]="table-driven M-coder, K=8    (no multiply, 0 DSP -- 2.49x rep on fabric)"
   [interleaved]="arith, C-slow interleaved     (iteration 2, area-efficient)"
   [tans]="tree method, static tANS     (shared frequency table, SIMD + wide AXI)"
   [multi]="tANS x2 compute units        (2 CUs on separate HP ports -- 1.95x scaling)"
@@ -81,6 +113,7 @@ run_one(){
 
 # ---- main -------------------------------------------------------------------
 [ $# -eq 0 ] && { usage; exit 0; }
+preflight || exit 1
 
 if [ "$1" = "all" ]; then
   SUM="$TMP/summary"; : > "$SUM"
@@ -95,17 +128,34 @@ if [ "$1" = "all" ]; then
     # multi_host reports CU scaling rather than a software speedup
     [ -z "$sp" ] && sp=$(echo "$out" | grep -oiE "scaling *: *[0-9.]+x" | grep -oE "[0-9.]+x" | tail -1)
     ok=$(echo "$out" | grep -ciE "lossless *: *YES|PASS:|LOSSLESS|all CUs identical *: *YES")
-    printf "%-12s|%-14s|%-9s|%s\n" "$k" "${tp:-n/a}" "${sp:-n/a}" \
+    # these coders emit one symbol per byte, so MB/s and M sym/s are the same
+    # number -- normalise the unit so the column is readable.
+    tp=$(echo "$tp" | sed -E 's/ M(B|| sym[a-z]*)\/s/ M sym\/s/; s/ M symbols\/s/ M sym\/s/')
+    bnd=$(field "$d" 7)
+    printf "%-12s|%-14s|%-8s|%-9s|%s\n" "$k" "${tp:-n/a}" "$bnd" "${sp:-n/a}" \
            "$([ "$ok" -gt 0 ] && echo PASS || echo CHECK)" >> "$SUM"
   done
-  echo "================== COMPARISON (this run) ====================="
-  printf "%-12s %-14s %-9s %s\n" "DESIGN" "THROUGHPUT" "VS SW*" "CORRECT"
-  printf "%-12s %-14s %-9s %s\n" "------" "----------" "-------" "-------"
-  while IFS='|' read -r a b c d; do printf "%-12s %-14s %-9s %s\n" "$a" "$b" "$c" "$d"; done < "$SUM"
-  echo "=============================================================="
-  echo "* vs each design's OWN software baseline (multi = CU scaling, not a speedup)."
-echo "Note: those baselines differ, so compare THROUGHPUT across rows, not ratios:"
-  echo "  bit-wise arith 3.5 M sym/s  vs  byte-wise tANS 56 M sym/s."
+  echo "===================== COMPARISON (this run) ========================"
+  printf "%-12s %-14s %-8s %-9s %s\n" "DESIGN" "THROUGHPUT" "TIMING" "VS SW*" "CORRECT"
+  printf "%-12s %-14s %-8s %-9s %s\n" "------" "----------" "------" "-------" "-------"
+  while IFS='|' read -r a b c d e; do printf "%-12s %-14s %-8s %-9s %s\n" "$a" "$b" "$c" "$d" "$e"; done < "$SUM"
+  echo "===================================================================="
+  cat <<'NOTE'
+READ THE 'TIMING' COLUMN BEFORE COMPARING ANYTHING.
+
+  kernel = chrono around enqueue+wait only.  Excludes host<->device transfer.
+  demo   = the whole compress call.          INCLUDES that transfer.
+
+Rows with different TIMING are NOT comparable. The same M-coder bitstream reads
+33.1 M sym/s as 'kernel' and 22.3 M sym/s as 'demo'; both are correct. For the
+like-for-like kernel figure on the arith designs, run bench_host instead:
+  ssh $BOARD './bench_host_arm -x <bitstream> -N 4095 -n 2000'
+
+* is vs each design's OWN software baseline, and those differ ~16x (bit-wise
+arith ~3.5 M sym/s on the A53 vs byte-wise tANS ~56). So compare the THROUGHPUT
+column within a TIMING group -- never the ratios. For 'multi' the figure is CU
+scaling, not a speedup over software.
+NOTE
   else
   run_one "$1"
 fi

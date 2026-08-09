@@ -1,0 +1,34 @@
+Image demo — replication_full K=8, KV260 PL @ 200 MHz
+Re-measured 2026-08-08 to give the "65 KB image -> N KB" claim a traceable source.
+
+Host: bin/demo_arm  (src/demo_host.cpp), timing includes host<->device transfer,
+so these MB/s are NOT comparable with the kernel-only bench figures.
+
+  ./demo_arm -i <img>.pgm -x /lib/firmware/xilinx/arith/arith.bin
+
+All three images are 256x256 = 65536 bytes, 16 blocks of <=4096.
+All three round-trip pixel-perfect, and CPU and FPGA emit identical bytes.
+
+  image      | compressed | ratio    | ARM MB/s | FPGA MB/s | speedup
+  -----------+------------+----------+----------+-----------+--------
+  image.pgm  |   42661 B  |  65.10%  |  2.990   |  10.776   |  3.60x
+  img_smooth |   46157 B  |  70.43%  |  2.918   |  10.601   |  3.63x
+  img_noise  |   66916 B  | 102.11%  |  2.457   |   9.438   |  3.84x
+
+image.pgm run in full:
+  original size      : 65536 bytes
+  compressed size    : 42661 bytes  (65.0955% of original)
+  lossless           : YES  (reconstructed == original, pixel-perfect)
+  CPU vs FPGA output : identical bytes
+  ARM CPU  compress  : 21872.7 us  (2.99625 MB/s)
+  FPGA     compress  : 6042.48 us  (10.8459 MB/s)
+  SPEEDUP (FPGA/CPU) : 3.61981x
+
+NOTE ON THE SLIDE CLAIM. The presentation says "65 KB image -> 40 KB" and
+"~39% reduction". The measured figure is 65536 -> 42661 B, i.e. a 34.9%
+reduction. Use 42.7 KB / 34.9%, or state it as "65 KB -> ~43 KB".
+
+INPUT SENSITIVITY. Same bitstream, same host, same timing boundary: throughput
+varies 9.438 - 10.776 MB/s (14%) purely with the input image, and the ratio
+varies 65% - 102%. Compression ratios are therefore only comparable between
+designs when the input is byte-identical.
