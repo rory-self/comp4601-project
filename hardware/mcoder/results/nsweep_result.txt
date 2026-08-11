@@ -1,0 +1,134 @@
+Block-size sweep — mcoder K=8 ON FABRIC (KV260 PL @ 200 MHz)
+Separates the fixed per-call host cost from the marginal per-symbol cost by
+fitting  t_call = t_fixed + N * t_sym  over eight block sizes.
+
+Method: bench_host_arm -N <n> -n 2000, chrono around kernel enqueue+wait only
+(the same boundary as onfabric_result.txt).  Synthetic 'a'+(i%7) payload.
+Every point verified lossless (host decoded the board's output == input).
+Board: petalinux@10.42.0.225, firmware slot /lib/firmware/xilinx/mcoder.
+
+  N (bytes) | mean us | median us | M sym/s | kernel+DMA us | comp bytes
+  ----------+---------+-----------+---------+---------------+-----------
+       128  |  58.03  |   58.80   |   2.21  |     67.05     |  144 (112.5%)
+       256  |  62.65  |   63.45   |   4.09  |     71.26     |  216 (84.4%)
+       512  |  68.28  |   68.85   |   7.50  |     76.94     |  322 (62.9%)
+      1024  |  76.82  |   77.24   |  13.33  |     85.08     |  521 (50.9%)
+      1536  |  85.80  |   86.63   |  17.90  |     95.11     |  720 (46.9%)
+      2048  |  95.17  |   96.08   |  21.52  |    104.09     |  917 (44.8%)
+      3072  | 113.15  |  114.23   |  27.15  |    122.50     | 1302 (42.4%)
+      4095  | 130.98  |  132.09   |  31.26  |    140.46     | 1687 (41.2%)
+
+Least-squares fit:
+
+  kernel only, all 8 points   t_fixed = 57.85 us   t_sym = 18.00 ns   R2 = 0.99847
+  kernel only, N >= 256       t_fixed = 58.70 us   t_sym = 17.70 ns   R2 = 0.99981
+  kernel + DMA, all 8 points  t_fixed = 66.47 us   t_sym = 18.21 ns   R2 = 0.99886
+
+  asymptotic throughput (kernel only) : 55.6 M sym/s
+  fixed cost == kernel cost at        : N ~ 3.2 kB
+  fixed share at N=4095               : 44%
+
+N=128 is the only point off the line (-3.7%); it is also the only one where the
+coder expands the input (112.5%), so the Concat copy loop is doing more work per
+byte than the fit's single slope allows.  Excluding it tightens R2 to 0.99981
+and moves the fit by under 2%.
+
+
+FINDING 1 — the fixed cost is host-side, and it is the same constant
+replication_full pays.
+
+  design             t_fixed    t_sym      asymptote   fixed share @ N=4095
+  replication_full   55 us      62.2 ns    16.1 M/s    18%
+  mcoder             57.9 us    18.0 ns    55.6 M/s    44%
+
+The two intercepts agree within 5%.  That is expected and worth stating: both
+designs use the same XRT host path, the same buffer sizes, and a deliberately
+argument-compatible kernel signature (see src/arith_board.cpp), so the intercept
+is a property of the host interface, not of the coder.  The M-coder does not pay
+more overhead -- it pays the same overhead inside a call that is 2.37x shorter.
+
+
+FINDING 2 — the datapath gain over replication_full is 3.46x, not 2.34x.
+
+The 2.34x quoted in onfabric_result.txt is a per-call ratio at N=4095, and both
+calls contain the same ~57 us of fixed cost, which dilutes it.  Comparing the
+marginal rates instead:
+
+  62.2 ns/sym  ->  18.0 ns/sym   =  3.46x   (marginal, what the datapath did)
+  16.1 M/s     ->  55.6 M/s      =  3.45x   (asymptotic, same thing)
+  310.1 us     ->  131.0 us      =  2.37x   (per call at N=4095, what we quote)
+
+Both numbers are correct and they answer different questions.  2.34x is what a
+caller sees today at a 4 KB block; 3.46x is what the M-coder actually did to the
+coding datapath.  Neither should be quoted without its block size.
+
+
+FINDING 3 — the marginal rate is 3.60 cyc/byte, not the 6.67 cosim reports.
+
+  t_sym = 18.00 ns at 200 MHz = 3.60 cycles per input byte.
+
+results/mcoder_hls_sweep.csv reports 6.67 cyc/byte for this configuration, but
+that is a *call average* over the testbench corpus (5130 bytes in six calls,
+mostly N=1024), so it contains the kernel's own per-call fixed work.  Solving
+6 * a + 3.60 * 5130 = 34236 total cosim cycles gives a ~ 2.6k cycles (~13 us) of
+kernel-internal fixed cost per call, which would leave ~45 us of the measured
+57.9 us intercept as XRT launch latency.
+
+That is a decomposition with one equation and one unknown, not an independent
+validation -- it cannot fail to reconcile, exactly like the 1.46x DDR residual
+quoted for the interleaved design.  What it does establish is that no third term
+is needed: host launch plus kernel-internal fixed cost account for the intercept.
+
+CAVEAT for onfabric_result.txt: that file notes "cosim predicted 6.67 cycles/byte;
+fabric measured 6.43 ... agreement within 3.6%".  Both are call averages, but at
+different block sizes (cosim ~1 kB, fabric 4095 B) and with different per-call
+fixed costs (cosim has no XRT launch; the fabric figure includes ~58 us of it).
+The agreement is therefore a coincidence of two averages rather than evidence the
+model predicts the hardware.  The marginal rates are the comparable quantities.
+
+
+FINDING 4 — DMA is a fixed cost, not a per-byte one.
+
+  intercept  57.85 -> 66.47 us   (+8.6 us)
+  slope      18.00 -> 18.21 ns   (+0.21 ns/sym, i.e. +1.2%)
+
+Independently confirmed by the per-leg chrono in the same run at N=4095:
+h2d 3.3 us + d2h 5.8 us = 9.1 us, against the 8.6 us the fit attributes to it.
+Two different measurements of the same quantity agreeing within 6%.  A 4 KB
+payload over the AXI HP port is simply too small for the transfer time to matter;
+what costs is the sync/ioctl pair.
+
+
+CONSEQUENCE — block size is the remaining lever, and it is capped by BRAM.
+
+Projections from the fit (only the N<=4095 rows are measured):
+
+    N       t_call      M sym/s    fixed share
+    1024     76.3 us     13.4        76%
+    2048     94.7 us     21.6        61%
+    4095    131.6 us     31.1        44%     <- shipped
+    8192    205.3 us     39.9        28%     projected -> measured 40.59 (-1.7%)
+   16384    352.8 us     46.5        16%     projected -> measured 46.81 (-0.8%)
+   inf         --        55.6         0%
+
+Going past 4095 needs a kernel rebuild, not a host flag: MC_MAX_IN sizes the
+buf[][]/cout[][] staging arrays, and those are what occupies BRAM (42 of 288
+BRAM18 at 4 KB, per synth_results.md).
+
+  SUPERSEDED: this file originally projected ~58% BRAM at a 16 KB block and
+  declared 26 KB infeasible at ~95%.  Both were wrong -- they assumed the
+  staging arrays scale linearly into BRAM.  The 16 KB kernel was since built
+  and measured at 20% BRAM (58 of 288), and the projections below were checked
+  against hardware to within 0.8%.  See nsweep_16k_result.txt.
+
+This is where the next speedup is.  At K=8 the coding loop is already only 15.6%
+of kernel cycles and K=16 measures *slower*, so more coders cannot help; a bigger
+block is the only lever that moves the reported figure toward the 55.6 M sym/s
+the datapath is already capable of.
+
+Reproduce:
+  scp hardware/mcoder/bin/bench_host_arm $BOARD:/tmp/
+  ssh $BOARD 'echo $PW | sudo -S xmutil unloadapp; echo $PW | sudo -S xmutil loadapp mcoder'
+  ssh $BOARD 'cd /tmp; for N in 128 256 512 1024 1536 2048 3072 4095; do
+      XILINX_XRT=/usr ./bench_host_arm -x /lib/firmware/xilinx/mcoder/mcoder.bin \
+          -N $N -n 2000; done'

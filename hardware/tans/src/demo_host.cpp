@@ -111,6 +111,14 @@ int main(int argc, char** argv) {
     const std::string mode{arg_of(args, "-m", "both")};   // sw | hw | both
     const int secs = int_arg(args, "-t", 10);             // sustained-load seconds
 
+    // Block size for the compare loop.  Defaults to kMaxIn, so every existing
+    // invocation behaves exactly as before; smaller values sweep the per-call
+    // cost curve.  It cannot exceed kMaxIn: that constant sizes the kernel's
+    // staging arrays and is compiled into the RTL, not a host-side choice.
+    // The output slot stride (kSlot/kHdr) stays at its compile-time value for
+    // the same reason -- the kernel's container layout does not shrink with n.
+    const int blk = std::min(int_arg(args, "-N", kMaxIn), kMaxIn);
+
     ovh::Breakdown oh;
 
     // Building the entropy table is the tree method's one-time cost. Timed for
@@ -183,7 +191,7 @@ int main(int argc, char** argv) {
     std::cout << "===== tree method (static tANS) : ARM software vs FPGA =====\n"
               << "workload: " << files.size() << " files sharing ONE frequency table"
               << " (table precomputed once, baked into the kernel)\n"
-              << "block size: " << kMaxIn << " B, K=" << kKWay << " lanes SIMD, 64-bit AXI\n\n";
+              << "block size: " << blk << " B, K=" << kKWay << " lanes SIMD, 64-bit AXI\n\n";
 
     double sw_us_tot = 0, hw_us_tot = 0; long bytes_tot = 0, comp_tot = 0;
     bool all_lossless = true;
@@ -191,15 +199,15 @@ int main(int argc, char** argv) {
 
     for (std::size_t fi = 0; fi < files.size(); ++fi) {
         const auto& F = files[fi];
-        const int nblk = (int)(F.size() / kMaxIn);
+        const int nblk = (int)(F.size() / blk);
         double sw_us = 0, hw_us = 0; long comp = 0; bool ok = true;
 
         for (int b = 0; b < nblk; ++b) {
-            const byte* src = F.data() + (std::size_t)b * kMaxIn;
+            const byte* src = F.data() + (std::size_t)b * blk;
 
             // ---- software (ARM) ----
             const auto t0 = Clock::now();
-            for (int r = 0; r < iters; ++r) sw_encode(enc, src, kMaxIn, scratch);
+            for (int r = 0; r < iters; ++r) sw_encode(enc, src, blk, scratch);
             sw_us += std::chrono::duration<double, std::micro>(Clock::now() - t0).count() / iters;
 
             // ---- hardware (FPGA) ----
@@ -208,13 +216,13 @@ int main(int argc, char** argv) {
             // below (which repeats the same buffers `iters` times) charges none
             // of it.
             t = ovh::Clock::now();
-            std::memcpy(in, src, kMaxIn);
+            std::memcpy(in, src, blk);
             bo_in.sync(XCL_BO_SYNC_BO_TO_DEVICE);
             oh.h2d += ovh::us_since(t);
 
-            kernel(bo_in, kMaxIn, bo_out, bo_len).wait();          // warm
+            kernel(bo_in, blk, bo_out, bo_len).wait();             // warm
             const auto t1 = Clock::now();
-            for (int r = 0; r < iters; ++r) kernel(bo_in, kMaxIn, bo_out, bo_len).wait();
+            for (int r = 0; r < iters; ++r) kernel(bo_in, blk, bo_out, bo_len).wait();
             hw_us += std::chrono::duration<double, std::micro>(Clock::now() - t1).count() / iters;
 
             t = ovh::Clock::now();
@@ -240,10 +248,10 @@ int main(int argc, char** argv) {
                     st = dec.newState[st] + rd(nb);
                 }
             }
-            if (rp != (std::size_t)kMaxIn || std::memcmp(rec.data(), src, kMaxIn) != 0) ok = false;
+            if (rp != (std::size_t)blk || std::memcmp(rec.data(), src, blk) != 0) ok = false;
         }
         if (!ok) all_lossless = false;
-        const long fb = (long)nblk * kMaxIn;
+        const long fb = (long)nblk * blk;
         std::cout << "  file" << fi << ": " << fb << " B  " << (ok ? "LOSSLESS" : "FAIL")
                   << "  ratio " << (100.0 * comp / fb) << "%"
                   << "   ARM " << (fb / sw_us) << " M sym/s"

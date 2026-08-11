@@ -3,8 +3,16 @@
 #include <stdint.h>
 #include "mcoder_tables.h"
 
+/* Block size.  Overridable from the build so the block-size sweep can be run
+ * against a rebuilt kernel -- MC_MAX_IN sizes the buf[][]/cout[][] staging
+ * arrays, so it is compiled into the RTL and cannot be raised host-side.
+ * The container header carries rlen/clen as uint16, which caps this at 64 KB. */
+#ifndef MC_MAX_IN
 #define MC_MAX_IN    4096
-#define MC_MAX_OUT   8192
+#endif
+#ifndef MC_MAX_OUT
+#define MC_MAX_OUT   (2 * MC_MAX_IN)
+#endif
 
 #ifndef MC_KWAY
 #define MC_KWAY      4

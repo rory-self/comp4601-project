@@ -1,0 +1,145 @@
+Block-size sweep — mcoder K=8 at MC_MAX_IN=16384, ON FABRIC (KV260 PL @ 200 MHz)
+Rebuilt kernel, 4x the block of the shipped design.  Same coder, same K, same
+clock; only the staging arrays grew.
+
+Why a rebuild was needed: MC_MAX_IN sizes the buf[][]/cout[][] staging arrays,
+so it is compiled into the RTL.  The shipped 4 KB bitstream clamps any larger
+request host-side and cannot be swept past 4095 no matter what the host asks.
+
+Build: synth/build_16k.sh (HLS) + synth/relink_16k_custom.sh (link).
+  MC_MAX_IN=16384, MC_MAX_OUT=32768, MC_KWAY=8, MC_CTX_LUTRAM
+  platform kv260_custom (VBNV xilinx_kv260_kv260_hardware_platform_0_0)
+  artifacts: bin/arith_16k.bin, bin/bench_host_arm_16k
+
+Method: bench_host_arm_16k -N <n> -n 500, chrono around kernel enqueue+wait
+only -- the same boundary as onfabric_result.txt and nsweep_result.txt.
+Synthetic 'a'+(i%7) payload.  Every point verified lossless.
+
+
+RESOURCES — the block grew 4x, the design barely did
+
+                          4 KB (shipped)   16 KB (this)
+  BRAM                    42 (14%)         58 (20%)
+  LUT                     43165 (36%)      43165 (36%)
+  FF                      13170 (5%)       13170 (5%)
+  DSP                     0                0
+  HLS estimated Fmax      --               228.31 MHz
+  post-route WNS          +0.754 ns        +0.243 ns
+  failing endpoints       0 of 71960       0 of 71966
+  kernel clock            200 MHz          200 MHz (clk_out2, 5.000 ns)
+
+LUT and FF are byte-identical: the coder is untouched and only the staging
+arrays grew.  BRAM went up by 16 blocks, not by 4x -- HLS packs the larger
+arrays into BRAM18/36 far more efficiently than the 4 KB ones, which wasted
+most of each block.  Timing still closes, with less margin (+0.243 vs +0.754),
+consistent with the post-route critical path living in the Concat output copy
+loop -- exactly what a 4x longer block stretches.
+
+
+MEASURED
+
+  N (bytes) | mean us | median us | M sym/s | kernel+DMA us | ratio
+  ----------+---------+-----------+---------+---------------+-------
+      1024  |  76.74  |   77.20   |  13.34  |     88.81     | 50.88%
+      2048  |  91.34  |   90.47   |  22.42  |    105.12     | 44.78%
+      4095  | 131.08  |  132.13   |  31.24  |    143.37     | 41.20%
+      6144  | 166.39  |  165.73   |  36.93  |    180.63     | 39.99%
+      8192  | 201.82  |  201.57   |  40.59  |    216.42     | 39.40%
+     12288  | 275.85  |  276.98   |  44.55  |    290.46     | 38.80%
+     16384  | 349.99  |  350.05   |  46.81  |    364.32     | 38.51%
+
+Least-squares fit  t_call = t_fixed + N * t_sym:
+
+  kernel only    t_fixed = 56.77 us   t_sym = 17.85 ns   R2 = 0.99983
+  kernel + DMA   t_fixed = 69.52 us   t_sym = 17.99 ns   R2 = 0.99995
+
+  asymptotic throughput   56.0 M sym/s
+  fixed == kernel cost at N ~ 3.2 kB
+  fixed share at N=16384  16.2%  (was 44% at N=4095)
+
+
+FINDING 1 — the 4 KB fit predicted this to within 0.8%.
+
+nsweep_result.txt fitted the shipped 4 KB bitstream and extrapolated beyond its
+own measurable range.  Those extrapolations can now be checked:
+
+    N        predicted        measured        error
+   8192   205.30 us (39.90)  201.82 (40.59)   -1.69%
+  12288   279.02 us (44.04)  275.85 (44.55)   -1.14%
+  16384   352.75 us (46.45)  349.99 (46.81)   -0.78%
+
+The error shrinks with N and the model is slightly conservative throughout.
+The two independent fits also agree on both parameters:
+
+                    4 KB build     16 KB build
+    t_fixed         57.85 us       56.77 us      (1.9% apart)
+    t_sym           18.00 ns       17.85 ns      (0.8% apart)
+
+Two separate bitstreams, two separate board sessions, one reboot in between.
+That is the strongest evidence in this project that the linear per-call model is
+real and not a curve-fitting artifact -- and it retroactively justifies quoting
+the 4 KB fit's asymptote.
+
+
+FINDING 2 — the same block size costs the same, so the bigger kernel is free.
+
+At N=4095 the 16 KB bitstream measures 131.08 us against the 4 KB bitstream's
+129.4-131.6 us across three sessions.  Identical within run-to-run scatter.
+Carrying 4x the staging capacity costs nothing when you do not use it, so there
+is no reason to keep a 4 KB build around except as the documented artifact.
+
+
+FINDING 3 — compression also improves with block size.
+
+  N=4095   41.20%      N=8192   39.40%      N=16384  38.51%
+
+A 6.5% relative gain in ratio, for free, on the same coder.  The mechanism is
+the K-way split: at K=8 a 4095-byte block gives 512-byte chunks, and every chunk
+restarts its context model from MC_CTX_INIT.  A 16384-byte block gives 2048-byte
+chunks, so the adaptation cost is amortised over 4x more symbols.
+
+This is the same effect how_it_works.md documents as the *penalty* for raising K
+(+7.7 points from K=1 to K=16), read in the other direction: raising the block
+size at fixed K is the free version of that trade.  Throughput and ratio move
+together here, which is unusual and worth stating plainly.
+
+
+FINDING 4 — DMA remains a fixed cost.
+
+  intercept  56.77 -> 69.52 us  (+12.8 us)
+  slope      17.85 -> 17.99 ns  (+0.14 ns/sym, +0.8%)
+
+Same conclusion as the 4 KB sweep: a payload this size is too small for transfer
+time to matter; what costs is the sync pair.  The intercept delta grew from
+8.6 to 12.8 us because the buffers being synced are 4x larger.
+
+
+WHERE THIS LEAVES THE DESIGN
+
+  block   M sym/s   fixed share
+   4095    31.24      43%          shipped
+  16384    46.81      16%          measured here, +50% throughput
+    inf    56.0        0%          fit asymptote
+
+Raising the block from 4 KB to 16 KB buys +50% throughput and -2.7 points of
+compressed size, for 16 BRAM and 0.5 ns of timing margin.  The coder itself was
+not touched.
+
+A previous note in nsweep_result.txt projected ~58% BRAM at 16 KB and declared
+26 KB infeasible at ~95%.  Both figures were wrong -- they assumed the staging
+arrays scale linearly into BRAM, and the measurement says 20% at 16 KB.  On this
+evidence 32 KB is likely to fit; the real ceiling is the container header, which
+carries rlen/clen as uint16 and therefore caps a chunk at 64 KB.  That is worth
+one more rebuild if the throughput matters.
+
+Reproduce:
+  cd synth && bash build_16k.sh          # HLS + first link
+  bash relink_16k_custom.sh              # link against kv260_custom
+  scp ../bin/arith_16k.bin $BOARD:/tmp/
+  # NOTE: keep exactly ONE .bin in /lib/firmware/xilinx/mcoder/ -- xmutil fails
+  # to load the app if a second .bin (e.g. a backup) is left in the slot dir.
+  ssh $BOARD 'sudo cp /tmp/arith_16k.bin /lib/firmware/xilinx/mcoder/mcoder.bin
+              sudo xmutil unloadapp; sudo xmutil loadapp mcoder'
+  ssh $BOARD 'cd /tmp; for N in 1024 2048 4095 6144 8192 12288 16384; do
+      XILINX_XRT=/usr ./bench_host_arm_16k \
+          -x /lib/firmware/xilinx/mcoder/mcoder.bin -N $N -n 500; done'

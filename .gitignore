@@ -14,6 +14,12 @@ vitis-comp.json
 *.link_summary
 *.xclbin.info
 
+# v++ --link temp/report/log tree. `temp_dir=bc1` in each design's link.cfg, so
+# a plain `bc1/` appears from the documented build; the suffixed ones come from
+# block-size rebuilds. ~200-250 MB per link, entirely regenerable.
+bc1/
+bc1_*/
+
 # ---- logs ----
 *.log
 
@@ -29,6 +35,11 @@ workload_profile/cond_entropy
 tans/software/tans_bench
 tans/software/derisk
 context_model/ctx_study
+
+# mcoder links to .xclbin (v++ 2025.2 rejects any other output extension) and
+# then copies it to .bin, which is the name the board's firmware slot loads.
+# The two are byte-identical, so only the .bin is tracked.
+hardware/mcoder/bin/*.xclbin
 
 # NOTE: prebuilt bitstreams (*.xclbin, board/arith.bin) and the cross-compiled
 # aarch64 hosts ARE tracked on purpose -- they let the demo run without a
