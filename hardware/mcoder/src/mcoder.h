@@ -19,7 +19,16 @@
 #endif
 
 #define MC_HDR_BYTES  (4 * MC_KWAY)                 /* 2 x uint16 per chunk */
-#define MC_CHUNK_CAP  (MC_MAX_IN / MC_KWAY + 64)    /* per-chunk output cap  */
+/* Per-chunk output cap.  Worst-case (near-random) input expands a chunk by
+ * roughly 1.7-2%, converging with chunk size rather than staying a fixed
+ * number of bytes -- so a fixed "+64" slack, sized for the original 512-byte
+ * chunk (K=8, MC_MAX_IN=4096), silently overflows cout[][] once the chunk
+ * crosses ~4 KB (measured: chunk=4096 needs 4168 B, "+64" gives 4160).
+ * There is no bounds check on the packer's writes, so this was a silent
+ * buffer overflow into the next chunk's memory, not a caught error.
+ * chunk/8 (12.5%) plus a small flush allowance covers the measured worst
+ * case (~2%) with a >5x margin at every block size tested (512 B..32 KB). */
+#define MC_CHUNK_CAP  (MC_MAX_IN / MC_KWAY + (MC_MAX_IN / MC_KWAY) / 8 + 64)
 
 #define MC_NTREE      256          /* bit-tree contexts, index 1..255 */
 

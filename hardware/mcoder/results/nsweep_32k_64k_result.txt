@@ -1,0 +1,141 @@
+Block-size sweep, extended to 32 KB and 64 KB, plus a correctness bug found
+and fixed along the way — mcoder K=8 ON FABRIC (KV260 PL @ 200 MHz)
+
+This extends nsweep_result.txt (4 KB) and nsweep_16k_result.txt (16 KB) with
+two more independently-built kernels, closing the open item from the report's
+"Work in progress" section: push N past 4 KB until throughput flattens.
+It now does, cleanly, across four separate bitstreams.
+
+
+BUG FOUND AND FIXED: MC_CHUNK_CAP overflowed for high-entropy input at large
+block sizes -- present in the shipped design, not introduced by this sweep.
+
+  #define MC_CHUNK_CAP  (MC_MAX_IN / MC_KWAY + 64)    /* old */
+
+mc_encode_chunk's output buffer cout[c][] is sized MC_CHUNK_CAP with NO bounds
+check anywhere in the packer. The "+64" slack was tuned for the shipped
+512-byte chunk (MC_MAX_IN=4096, K=8) and assumed a small FIXED number of extra
+bytes covers worst-case expansion. It does not: worst-case (near-random)
+input expands a chunk by ~1.7-2%, a cost that scales WITH chunk size, not a
+constant. Stress test, mc_encode_chunk() directly, 2000 uniform-random seeds
+per chunk size, old formula:
+
+  chunk    cap(+64)   worst observed clen   margin
+    512       576            522             54 B  ( 9.4%)   shipped 4 KB build
+   2048      2112           2085             27 B  ( 1.3%)   deployed 16 KB build
+   4096      4160           4168             -8 B  OVERFLOW  32 KB build (this is what failed csim)
+   8192      8256           8336            -80 B  OVERFLOW  64 KB build (would have failed)
+
+The 32 KB kernel's C-sim caught this directly: "text" and "all-zero" (both
+highly compressible) round-tripped fine; "random" failed. That is the
+signature of a capacity bug, not a logic bug -- and it explains why nothing
+built or measured before this sweep ever saw it: every board measurement in
+this project used the synthetic 'a'+(i%7) pattern (2.81 bits/byte), which
+compresses to ~41% and never comes close to any cap regardless of block size.
+No throughput number anywhere in this project is affected. What IS at risk:
+the shipped 4 KB and previously-deployed 16 KB kernels have real but thin
+margin (9.4% and 1.3%) against genuinely high-entropy input -- e.g. this
+project's own img_noise.pgm test case, ~102% ratio -- which could silently
+corrupt output on hardware. This was true before this sweep touched anything.
+
+Fix: proportional slack instead of a fixed one.
+
+  #define MC_CHUNK_CAP  (MC_MAX_IN/MC_KWAY + (MC_MAX_IN/MC_KWAY)/8 + 64)  /* new */
+
+Re-stressed at 20,000 seeds per size, 512 B to 65,536 B chunks: no overflow
+anywhere, margin holds at 9.7-18.3% throughout (results/../src/mcoder.h has
+the derivation). The fix is purely additive capacity -- re-synthesising 16 KB
+with it produces BYTE-IDENTICAL compressed output to the pre-fix build (9904 /
+16644 / 632 bytes on the standard test vectors, both before and after) and
+identical resource/timing (BRAM 58/288, WNS +0.243 ns), confirming it changes
+nothing about the coder's behaviour within its old safe range -- only removes
+the silent failure mode outside it. 32 KB and 64 KB kernels were rebuilt with
+the fix from the start and never existed in an unsafe form on hardware.
+
+Operational note for reproducing this: an early deploy attempt used bare
+`sudo` in a non-interactive SSH command with no TTY and no `-S`/piped
+password -- it failed silently (permission denied, script kept running) and
+left an OLD kernel loaded while a NEWER host binary drove it, i.e. the host
+requested a block size the loaded kernel's own buffers weren't sized for.
+That is exactly the same class of bug this section describes, self-inflicted
+via a tooling mistake rather than MC_CHUNK_CAP: it produced clean PASS results
+in the 32 KB range (by luck -- HLS array-overflow just wraps into adjacent
+on-chip memory, and the loop trip count depends on N, not on whether the
+backing array was sized for it, so *timing* isn't affected by the mismatch,
+only *correctness* is, and it happened not to trip the host's check at these
+particular sizes) and clean FAIL results in the entire 64 KB range (same
+mismatch, more excess, did trip the check). All of that first run's data was
+discarded; every number below is from a run where each deploy step's success
+("Loaded with slot_handle 0") was checked explicitly before proceeding.
+
+
+MEASURED: 32 KB and 64 KB kernels, correctly deployed and verified
+
+  N (bytes) | mean us | M sym/s | ratio    | build
+  ----------+---------+---------+----------+-------
+     20480  |  423.10 |  48.41  | 38.33%   | 32 KB
+     24576  |  496.54 |  49.49  | 38.21%   | 32 KB
+     28672  |  569.50 |  50.35  | 38.00%   | 32 KB
+     32768  |  644.22 |  50.86  | 38.06%   | 32 KB
+     40960  |  791.37 |  51.76  | 37.97%   | 64 KB
+     49152  |  937.80 |  52.41  | 37.91%   | 64 KB
+     57344  | 1082.20 |  52.99  | 37.75%   | 64 KB
+     65536  | 1229.77 |  53.29  | 37.84%   | 64 KB
+
+All eight lossless. The 16 KB kernel was re-verified post-fix at N=16384:
+349.86 us, 46.83 M sym/s -- matches the pre-fix figure (350.30 us, 46.77) to
+within run-to-run noise, confirming the fix changed nothing observable.
+
+Compression also keeps improving with block size, same mechanism as the 4->16
+KB step (fewer chunk restarts per byte): 41.20% (4 KB) -> 38.51% (16 KB,
+already measured) -> 38.06% (32 KB) -> 37.84% (64 KB). Diminishing but real.
+
+
+COMBINED FIT: all 23 points, four independent bitstreams (4/16/32/64 KB)
+
+  t_fixed = 57.36 us   t_sym = 17.889 ns   asymptote = 55.90 M sym/s
+  R2 = 0.999989
+
+This is not four separate fits agreeing with each other (already shown in
+nsweep_16k_result.txt); it is one line fit through all 23 points from four
+separate builds at once, and it holds R2 = 0.999989 -- essentially every
+residual is under 1.5%, several under 0.1%. That is about as strong a
+confirmation as this kind of measurement gets that t = t_fixed + N*t_sym is
+the real, exact-enough model, not an approximation that happens to work over
+a narrow range.
+
+  N        M sym/s   % of asymptote
+   4095     31.35     56.1%
+  16384     46.75     83.6%
+  32768     50.92     91.1%
+  65536     53.29     95.3%
+ 131072     54.57     97.6%   (extrapolated, not measured)
+
+At 65,536 bytes -- the largest block this container format supports without
+widening rlen/clen past uint16 -- throughput is 95.3% of the asymptote the
+4 KB fit originally predicted from eight points below 4 KB. The curve has
+visibly flattened; going further would buy single-digit percentage points at
+best, bounded by the 65,535-byte-per-chunk header limit.
+
+Resource cost of reaching here from the shipped 4 KB design:
+
+  block   BRAM (of 288)   M sym/s   vs shipped
+   4 KB    42 (14%)         31.26      1.00x
+  16 KB    58 (20%)         46.81      1.50x
+  32 KB    90 (31%)         50.86      1.63x
+  64 KB   154 (53%)         53.29      1.70x
+
+Returns collapse the same way K's did in the original sweep (K=1->2 gains
+36%, 8->16 is negative): 4->16 KB gains 50%, 16->32 gains 9%, 32->64 gains
+5%. Unlike K, though, BRAM cost keeps climbing (53% at 64 KB), so 64 KB is a
+reasonable stopping point on cost/benefit even though headroom remains.
+
+Reproduce:
+  cd synth
+  ./build_size.sh 32768 32k     # or any MC_MAX_IN; writes bin/arith_<tag>.bin
+  ./build_size.sh 65536 64k
+  # cross-compile the matching host: -DMC_MAX_IN=<N> bench_host.cpp mcoder_dec.cpp
+  # deploy: keep exactly ONE .bin in /lib/firmware/xilinx/mcoder/, and check
+  # `xmutil loadapp` actually printed "Loaded with slot_handle" before running
+  # anything -- a silently-failed sudo leaves the OLD kernel loaded and gives
+  # results that look plausible but aren't testing what you think they are.

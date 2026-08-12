@@ -1,0 +1,145 @@
+Total-payload-size sweep — mcoder K=8 ON FABRIC (KV260 PL @ 200 MHz)
+
+A different axis from nsweep_result.txt / nsweep_16k / nsweep_32k_64k.  Those
+vary the size of ONE kernel call and fit t = t_fixed + N*t_sym.  This varies the
+TOTAL amount of data compressed, split across ceil(total/block) successive kernel
+calls -- the way a real caller must, and the way demo_host already chunks an
+image.  It answers "how does the system scale with how much data I have", which
+the per-call curve does not.
+
+Host: src/size_bench.cpp (new), cross-compiled as bin/size_bench_arm_64k with
+MC_MAX_IN=65536.  Kernel: bin/arith_64k.bin (the 64 KB build).  Because a kernel
+accepts any block <= its compiled-in MC_MAX_IN, BOTH axes are host-side here --
+one bitstream covers the whole 2-D sweep, no reloads.
+
+Payload: synthetic 'a'+(i%7).  Every one of the 14 configurations round-tripped
+losslessly (every block decoded on the host and compared).
+
+
+MEASURED
+
+  total      block   calls   ratio    kernel-only   +DMA     +setup
+  ---------- ------- ------- -------- ------------- -------- --------
+       4,096   4,096       1  41.19%     32.26       27.86     0.13
+      16,384   4,096       4  41.20%     32.10       27.74     0.54
+      65,536   4,096      16  41.21%     31.04       26.89     2.04
+     262,144   4,096      64  41.21%     31.32       27.13     6.56
+   1,048,576   4,096     256  41.21%     30.83       26.59    15.13
+   4,194,304   4,096   1,024  41.21%     30.80       26.49    22.26
+  16,777,216   4,096   4,096  41.21%     30.89       26.54    25.33
+
+       4,096  65,536       1  41.19%     31.72       27.44     0.14
+      16,384  65,536       1  38.51%     47.01       44.10     0.54
+      65,536  65,536       1  37.84%     53.18       51.79     2.11
+     262,144  65,536       4  37.84%     53.34       51.92     7.57
+   1,048,576  65,536      16  37.85%     53.22       51.38    20.90
+   4,194,304  65,536      64  37.85%     53.24       51.19    37.51
+  16,777,216  65,536     256  37.85%     53.23       51.22    46.93
+
+(all figures M sym/s.  Note the first two rows of the 65,536 block group are
+not really 64 KB calls: the host issues n = min(block, remaining), so a 4,096-
+byte payload is a 4,096-byte call whatever -B says.  They land on 31.72 and
+47.01, matching the 4 KB and 16 KB per-call figures -- a useful internal check.)
+
+
+FINDING 1 — kernel throughput does not depend on total payload size at all.
+
+Down each block-size group the kernel-only column is flat: 30.8-32.3 M sym/s at
+a 4 KB block and 53.2 M sym/s at a 64 KB block, across a 4096x range of total
+payload (4 KB to 16 MB).  Compared against the per-call model fitted
+independently in nsweep_32k_64k_result.txt (t_fixed = 57.36 us,
+t_sym = 17.889 ns):
+
+    block    model predicts    measured (16 MB total)   agreement
+    4,096      31.35 M/s            30.89 M/s              98.5%
+   65,536      53.29 M/s            53.23 M/s              99.9%
+
+So total time really is just (number of calls) x (per-call time), with no
+additional term that grows with payload size -- no DDR pressure, no cache
+effect, no degradation at 4,096 consecutive calls.  The per-call model composes,
+which is what licenses using it to predict anything at all.
+
+This also means "input data size" is the WRONG knob for performance.  Scaling
+the payload 4096x changes throughput by under 5%.  Scaling the block size 16x
+changes it by 1.72x.
+
+
+FINDING 2 — block size is the lever, and its advantage is constant.
+
+  total        4 KB block   64 KB block   ratio
+      4,096      32.26        31.72        0.98x   (both are 4 KB calls)
+     16,384      32.10        47.01        1.46x
+     65,536      31.04        53.18        1.71x
+    262,144      31.32        53.34        1.70x
+  1,048,576      30.83        53.22        1.73x
+  4,194,304      30.80        53.24        1.73x
+ 16,777,216      30.89        53.23        1.72x
+
+Once the payload is at least one full block, the 1.72x advantage is constant.
+It does not grow or decay with payload size, because it is entirely a per-call
+property: fewer, larger calls pay t_fixed fewer times.
+
+Compression improves the same way and for the same reason (fewer chunk restarts
+per byte): 41.21% at a 4 KB block vs 37.85% at 64 KB, again independent of total
+payload size.
+
+
+FINDING 3 — including setup, the FPGA LOSES on a single 65 KB image.
+
+The +setup column is end-to-end for a process that starts, compresses one
+payload, and exits.  Setup here is ~30 ms (device open 3.3 ms, xclbin load
+20.4 ms, kernel handle 5.9 ms, buffer alloc 1.2 ms), and it is paid once
+regardless of payload.
+
+Against the M-coder's own ARM baseline of 3.20 M sym/s
+(results/arm_baseline.txt, MC_KWAY=1 on the A53):
+
+  break-even payload, 64 KB block :  ~100 KB
+  break-even payload,  4 KB block :  ~107 KB
+
+Below that, a single-shot FPGA run is SLOWER end-to-end than just doing it on
+the CPU.  The image demo's own 65,536-byte payload sits below the line:
+
+  65,536 B, 64 KB block: 2.10 M sym/s end-to-end  vs  ARM 3.20  -> 1.52x SLOWER
+  65,536 B,  4 KB block: 2.02 M sym/s end-to-end  vs  ARM 3.20  -> 1.59x SLOWER
+
+This does not contradict the 9.53x headline -- that figure is kernel-only, which
+is the right boundary for characterising the accelerator, and it is correct for
+what it measures.  But it is the honest answer to "should I offload this image",
+and the answer for one 65 KB image on a cold process is no.  The accelerator
+wins from ~100 KB in one process, or immediately if the process stays alive and
+amortises setup across many payloads (which is the realistic deployment, and is
+what the flat kernel-only column above describes).
+
+Caveat on the setup figure: the ~30 ms here is a WARM xclbin load.  The first
+run after `xmutil loadapp` measured 217 ms (see nsweep_result.txt's overhead
+breakdown), because the PL programming path is cold.  On that cold figure the
+break-even moves out to ~723 KB (64 KB block) / ~771 KB (4 KB block).  Both are
+real; which applies depends on whether the bitstream is already resident.
+
+
+WHAT THIS MEANS FOR THE REPORT
+
+Three quantities that are easy to conflate, all measured, all different:
+
+  53.2 M sym/s   kernel-only, 64 KB block, any payload >= 64 KB
+  51.2 M sym/s   + DMA (data movement costs ~4%)
+  46.9 M sym/s   + setup, at a 16 MB payload
+   2.1 M sym/s   + setup, at a 65 KB payload   <- the demo's actual situation
+   3.20 M sym/s  ARM software baseline
+
+The spread between the first and the fourth is a factor of 25, on identical
+hardware running identical work.  Stating a throughput without stating both the
+boundary AND the payload size is therefore not a result.
+
+Reproduce:
+  # host (matches whichever kernel is loaded; MC_MAX_IN must be >= -B)
+  "$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common -DMC_KWAY=8 -DMC_MAX_IN=65536 \
+      size_bench.cpp mcoder_dec.cpp -o ../bin/size_bench_arm_64k $ARM_LDFLAGS
+  scp ../bin/size_bench_arm_64k $BOARD:/tmp/
+  ssh $BOARD 'cd /tmp; for B in 4096 65536; do
+      for S in 4096 16384 65536 262144 1048576 4194304 16777216; do
+        XILINX_XRT=/usr ./size_bench_arm_64k \
+          -x /lib/firmware/xilinx/mcoder/mcoder.bin -S $S -B $B -n 5 -q
+      done; done'
+  # -q emits one CSV row per configuration; drop it for the full breakdown.

@@ -1,0 +1,206 @@
+Sized vs whole-BO syncs — re-measurement of host<->kernel transfer overhead
+mcoder K=8 ON FABRIC (KV260 PL @ 200 MHz), 64 KB kernel (bin/arith_64k.bin)
+
+Follow-up to transfer_overhead_result.txt, which isolated the transfer
+primitives and predicted that switching bo.sync(dir) -> bo.sync(dir, size, 0)
+would save ~11.3 us per call at a 4 KB block.  This applies the change and
+measures it A/B.
+
+Method: src/size_bench.cpp gained a -w flag.  Default is now SIZED syncs;
+-w reproduces the legacy whole-BO behaviour.  One binary, one board session,
+alternating modes, so nothing else differs between the two arms.  28
+configurations (2 sync modes x 2 block sizes x 7 payload sizes), every one
+verified lossless -- the correctness pass runs in whichever sync mode is
+selected, so a sized sync that failed to make the right bytes coherent would
+show up as a round-trip mismatch rather than passing silently.
+
+Raw data: results/sync_ab.csv
+
+
+WHAT CHANGED IN THE CODE
+
+  input:   bo_in.sync(TO_DEVICE)            ->  bo_in.sync(TO_DEVICE, n, 0)
+  output:  bo_out.sync(FROM_DEVICE)         ->  bo_len.sync(FROM_DEVICE, 4, 0)
+           bo_len.sync(FROM_DEVICE)             clen = hlen[0]
+                                                bo_out.sync(FROM_DEVICE, clen, 0)
+
+The output path has an ordering constraint the whole-BO version hides: you
+cannot size the output sync until you know how many bytes the kernel produced,
+and that length lives in its own BO.  So the length BO must be synced first.
+That is two syscalls instead of one, and it still wins, because at this coder's
+~38% ratio the output sync moves ~5x less data.
+
+
+MEASURED: per-call transfer cost (h2d + d2h) and DMA-inclusive throughput
+
+  block = 4096 B
+     payload    whole    sized    saved  |  whole M/s  sized M/s    gain
+       4,096   20.36us   8.87us  11.50us |    27.79      29.55     +6.3%
+      16,384   19.95     8.44    11.51   |    27.26      30.54    +12.0%
+      65,536   20.12     8.68    11.44   |    26.75      29.02     +8.5%
+     262,144   20.24     8.56    11.68   |    26.81      29.43     +9.8%
+   1,048,576   20.95     9.81    11.14   |    26.63      28.87     +8.4%
+   4,194,304   21.64    10.09    11.55   |    26.34      29.04    +10.3%
+  16,777,216   21.78    10.40    11.39   |    26.56      28.83     +8.6%
+
+  block = 65536 B
+     payload    whole    sized    saved  |  whole M/s  sized M/s    gain
+       4,096   20.34us   8.63us  11.70us |    26.65      29.49    +10.7%
+      16,384   22.84    12.33    10.51   |    43.73      45.65     +4.4%
+      65,536   33.36    26.57     6.78   |    51.80      52.16     +0.7%
+     262,144   33.63    27.01     6.62   |    51.92      52.22     +0.6%
+   1,048,576   43.73    37.73     6.00   |    51.46      51.74     +0.6%
+   4,194,304   52.86    43.38     9.48   |    51.14      51.49     +0.7%
+  16,777,216   52.96    48.49     4.47   |    51.06      51.29     +0.5%
+
+(the first two rows of the 65536 group are not really 64 KB calls: the host
+issues n = min(block, remaining), so those are 4 KB and 16 KB calls and behave
+like the corresponding rows above.)
+
+
+FINDING 1 — the prediction was right to within 3%.
+
+transfer_overhead_result.txt predicted 11.3 us saved per call at a 4 KB block,
+from the isolated primitives (whole-BO sync 5.60 + 9.41 = 15.01 us, sized sync
+at 4 KB 1.88 + 1.83 = 3.71 us).  Measured here: 11.39-11.68 us across every
+payload size, i.e. 11.5 us mean.  A prediction made from a benchmark that never
+launched a kernel, confirmed against the full pipeline.
+
+
+FINDING 2 — it is worth ~9% at a 4 KB block and ~0.6% at 64 KB.
+
+That contrast is the whole point.  The saving is a fixed ~11.5 us per call
+either way, but what matters is its size relative to the call:
+
+  4 KB block:   11.5 us saved from a ~147 us call   -> ~9% faster
+  64 KB block:   6.5 us saved from a ~1265 us call  -> ~0.6% faster
+
+So sized syncs matter exactly where the buffer is oversized relative to the
+payload, which is the same condition that made the transfer overhead look large
+in the first place.  A design already using large blocks has almost nothing to
+gain here -- it has already solved the problem a different way.
+
+
+FINDING 3 — kernel-only throughput is unchanged, as it must be.
+
+  block   4096: whole 31.10 M/s   sized 31.41 M/s   +0.98%
+  block  65536: whole 49.10 M/s   sized 49.33 M/s   +0.47%
+
+(means across all seven payload sizes; the 65536 means are pulled down by the
+two rows that are really small calls.)  Sync happens outside the
+enqueue+wait timing, so any difference here is run-to-run noise, and sub-1% is
+consistent with the ~1-2% scatter seen throughout this project.  This is the
+control: it confirms the change affects only the transfer path and did not
+accidentally alter what the kernel does.
+
+
+FINDING 4 — transfer overhead, restated honestly.
+
+With sized syncs, host<->kernel transfer as a share of one call:
+
+  block    transfer/call   kernel/call   share
+   4 KB       8.4-10.4us      ~130us     6.1-7.4%
+  64 KB      26.6-48.5us     ~1230us     2.1-3.8%
+
+Compare the pre-fix figures, which is what size_sweep_result.txt reported:
+13.4-14.1% at a 4 KB block.  Roughly half of that was the harness flushing
+192 KB of buffer to move 4 KB of payload, not a real cost of using the
+accelerator.
+
+Note the sized 4 KB figure (6.1-7.4%) is still above the 3.4% that
+transfer_overhead_result.txt computed from primitives alone.  The difference is
+the per-call bo_len sync (~1.6 us of fixed syscall cost, unavoidable -- the host
+must read the length back) plus the second syscall the sized output path
+requires.  Both are real costs of the sized approach and are included above;
+the primitive-level 3.4% excluded them.
+
+
+FINDING 5 — normalised against the data itself: the interface is nowhere near
+being the bottleneck.
+
+A time or a percentage does not say whether the interface constrains anything.
+Three normalisations against the actual data volume do.  All figures below are
+for a 1 MB payload; clen is taken from each run's measured ratio.
+
+(a) BYTES MOVED per BYTE PROCESSED.  The floor is 1 + ratio: you must move the
+    input in and the compressed output out, and nothing less is possible.
+
+      mode    block    processed      moved   amplification
+      whole    4 KB        4,096    196,612       48.0x
+      whole   64 KB       65,536    196,612        3.0x
+      sized    4 KB        4,096      5,788        1.4x
+      sized   64 KB       65,536     90,346        1.4x
+
+    Sized syncs hit the 1.4x floor at both block sizes -- there is nothing left
+    to remove.  Whole-BO syncs at a 4 KB block move 48 bytes for every byte
+    coded, i.e. only 2.9% of the traffic is useful.  Aggregated over a 1 MB
+    payload that is 50.3 MB of cache traffic to compress 1 MB, versus 1.48 MB
+    once sized.
+
+(b) RATE the interface sustains vs RATE the coder consumes.
+
+      mode    block   transfer   moved B   xfer MB/s   coder MB/s   headroom
+      whole    4 KB    20.95us   196,612       9,387         30.8      305x
+      whole   64 KB    43.73us   196,612       4,496         53.3       84x
+      sized    4 KB     9.81us     5,788         590         31.0       19x
+      sized   64 KB    37.73us    90,346       2,395         53.3       45x
+
+    Even after removing all the wasted traffic, the transfer path still moves
+    data 19-45x faster than the coder can consume it.  The interface has an
+    order of magnitude of spare capacity in every configuration measured.
+
+    (The whole-BO rows show a HIGHER apparent MB/s precisely because they move
+    more bytes per syscall -- cache maintenance is efficient per byte once
+    started.  That is not an argument for doing it: those bytes are junk.  The
+    sized 4 KB figure of 590 MB/s is low for the opposite reason -- three
+    syscalls of ~1.6us fixed cost dominate a 5.8 KB transfer.)
+
+(c) PER-BYTE cost, transfer vs compute (sized):
+
+      block    transfer    coder      transfer as % of compute
+       4 KB    2.39 ns/B   32.24 ns/B          7.4%
+      64 KB    0.58 ns/B   18.75 ns/B          3.1%
+
+    (The coder's ns/byte differs between the two because a 4 KB call still
+    carries the full ~57us fixed per-call cost: 57.36/4096 + 17.89 = 31.9 ns/B,
+    against 57.36/65536 + 17.89 = 18.8 ns/B.  That is the block-size effect from
+    nsweep_32k_64k_result.txt, not a property of the transfer.)
+
+The conclusion across all three: host<->kernel transfer is not a bottleneck and
+was never close to being one.  It costs 3-7% of a call, moves at 19-45x the rate
+the coder needs, and after sizing it is already at its theoretical minimum
+volume.  There is no further optimisation available on this path.
+
+Which puts the earlier result in its place.  This project's real data-movement
+problem is INSIDE the kernel -- the byte-wide m_axi Split/Concat loops, measured
+at 60-84% of kernel time (nsweep_32k_64k_result.txt, and the report's
+"Where the runtime goes").  Those two things are both called "data movement" and
+they differ by more than an order of magnitude in importance:
+
+  host <-> kernel (this file)      3-7% of the call, 19-45x headroom
+  kernel <-> DDR   (m_axi loops)   60-84% of kernel time -- THE bottleneck
+
+Anyone reading "data transfer overhead" from this project should be told which
+of the two is meant, because the honest answers are "negligible" and "dominant"
+respectively.
+
+
+WHAT THIS DOES AND DOES NOT CHANGE
+
+Changed: src/size_bench.cpp now defaults to sized syncs.  Every figure in
+results/size_sweep_result.txt was taken with whole-BO syncs and is reproducible
+with -w; its "+DMA" column is ~9% pessimistic at a 4 KB block and ~0.6%
+pessimistic at 64 KB.  Its kernel-only column is unaffected.
+
+NOT changed: src/bench_host.cpp and src/demo_host.cpp still use whole-BO syncs,
+so every figure in onfabric_result.txt, nsweep_result.txt,
+nsweep_16k_result.txt and nsweep_32k_64k_result.txt stands exactly as recorded.
+Those are dominated by kernel-only measurements, which this change cannot
+affect.  Applying the same fix to those hosts would improve their DMA-inclusive
+numbers by the amounts above, and is left as a deliberate separate change so
+that no already-published figure silently shifts underneath it.
+
+Reproduce:
+  ssh $BOARD 'cd /tmp
+    XILINX_XRT=/usr ./size_bench_arm_64k -x <bin> -S 65536 -B 4096 -n 20      # sized
+    XILINX_XRT=/usr ./size_bench_arm_64k -x <bin> -S 65536 -B 4096 -n 20 -w'  # legacy

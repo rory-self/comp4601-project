@@ -1,0 +1,106 @@
+Host<->kernel data-transfer overhead — mcoder on KV260, measured in isolation
+
+Measured with src/transfer_bench.cpp, which launches NO kernel: it times the
+transfer primitives alone, separating the three things the other hosts bundle
+together.  64 KB kernel loaded (BOs: in 65536 B, out 131072 B), 2000 iterations
+per point.
+
+
+PLATFORM CAVEAT, WHICH FRAMES EVERYTHING BELOW
+
+The KV260 is a Zynq UltraScale+ MPSoC: the PS (ARM) and PL (fabric) share the
+same DDR.  There is no PCIe, no discrete device memory, and therefore no
+host->device copy in the sense the question usually implies for an accelerator
+card.  xrt::bo::sync() is CACHE MAINTENANCE -- flush before the PL reads,
+invalidate after it writes -- not a bus transfer.
+
+So "data transfer overhead to/from the kernel" splits into two very different
+quantities on this platform:
+
+  (a) making shared memory coherent, plus staging bytes into the mapped buffer
+      -> what this file measures.  Small: 2-3.5% of a call.
+
+  (b) the kernel's own m_axi traffic against DDR (the Split/Concat copy loops)
+      -> the real data movement.  Large: 60-84% of kernel time, already
+      characterised in nsweep_result.txt / nsweep_32k_64k_result.txt at
+      ~2.6 cycles/byte.
+
+If the question is "how much time goes to moving data rather than coding", the
+answer is (b) and it dominates.  If it is "what does the host pay to hand data
+to the accelerator", it is (a) and it is nearly free.
+
+
+MEASURED (a): the transfer primitives, in isolation
+
+  size(B)   memcpy    sync TO    sync FROM   sync TO    sync FROM   sized
+            into BO   (sized)    (sized)     (FULL BO)  (FULL BO)   MB/s
+  --------  --------  ---------  ----------  ---------  ----------  ------
+      256    0.057us    1.680us     1.622us    5.604us     9.404us     77.5
+     1024    0.207      1.714       1.656      5.582       9.399      303.8
+     4096    0.795      1.880       1.826      5.575       9.393     1105.2
+    16384    3.130      2.602       2.559      5.580       9.411     3174.5
+    65536   13.968      5.509       5.471      5.598       9.413     5969.0
+
+Three things fall out:
+
+1. The FULL-BO sync columns are FLAT -- 5.6 us in, 9.4 us out, regardless of
+   payload.  That is the cost of flushing/invalidating the whole 64 KB and
+   128 KB buffers.  It is what every existing host in this project pays,
+   because they all call bo.sync(dir) with no size argument.
+
+2. The SIZED sync columns scale with payload, from 1.7 us at 256 B to 5.5 us at
+   64 KB.  Cache maintenance has a fixed component (~1.6 us, a syscall) plus a
+   per-byte one.
+
+3. memcpy into the mapped BO is ~4.7 GB/s and is entirely avoidable -- an
+   application that generates its data directly into the BO pays none of it.
+   It is an application-structure cost, not an accelerator cost, and counting
+   it as "transfer overhead" overstates the accelerator's tax.
+
+
+WHAT THE CURRENT HOSTS ACTUALLY PAY, AND WHAT THEY COULD
+
+Per kernel call, full-BO sync (current) vs sized sync (possible):
+
+  payload   current: memcpy + 5.60 + 9.41   sized: memcpy + sized syncs   saving
+    4096 B     0.79 + 15.01 = 15.80 us         0.79 + 3.71 =  4.50 us     11.3 us
+   65536 B    13.97 + 15.01 = 28.98 us        13.97 + 10.98 = 24.95 us     4.0 us
+
+As a share of the call (kernel time from nsweep_32k_64k_result.txt):
+
+  payload   kernel   current transfer   sized transfer
+    4096 B   127 us      15.8 (11.1%)      4.5 ( 3.4%)
+   65536 B  1231 us      29.0 ( 2.3%)     24.9 ( 2.0%)
+
+This reconciles the aggregate figure in size_sweep_result.txt.  There, DMA per
+call measured ~20 us at a 4 KB block and ~33-48 us at 64 KB.  Predicted here:
+4 KB -> 0.79 + 15.01 + bo_len sync ~= 17.4 us; 64 KB -> 13.97 + 15.01 ~= 29.0 us.
+Both match.  The residual growth at large totals (33 -> 48 us) is the memcpy
+source going cold: at a 16 MB payload the source buffer no longer fits in cache,
+which is a property of the test harness, not of the accelerator.
+
+So the honest figure for host<->kernel transfer overhead is 2-3.5% of a call,
+NOT the 13.7% the 4 KB-block rows of size_sweep_result.txt appear to show.  That
+13.7% is an artifact of syncing 192 KB of buffer to move a 4 KB payload -- a 48x
+amplification caused by running a small block on a kernel built for a large one.
+
+
+AN EASY WIN THIS EXPOSES
+
+Switching the hosts from bo.sync(dir) to bo.sync(dir, size, 0) costs one
+argument and saves 11.3 us on every 4 KB-block call.  On the 4 KB configuration
+that is 147.0 -> 135.7 us of offload time, i.e. 27.86 -> 30.18 M sym/s including
+DMA, a free 8.3%.  At a 64 KB block it saves 4.0 us on a 1245 us call (0.3%) --
+not worth doing there, which is itself the point: the fix matters exactly where
+the buffer is oversized relative to the payload.
+
+Not applied here.  It changes the measurement boundary of every number already
+recorded in this project, so it should be a deliberate, separately-recorded
+change rather than something folded into a sweep.
+
+Reproduce:
+  "$CXX_ARM" $ARM_CXXFLAGS -I. -I../../common -DMC_KWAY=8 -DMC_MAX_IN=65536 \
+      transfer_bench.cpp -o ../bin/transfer_bench_arm $ARM_LDFLAGS
+  scp ../bin/transfer_bench_arm $BOARD:/tmp/
+  ssh $BOARD 'cd /tmp; XILINX_XRT=/usr ./transfer_bench_arm \
+      -x /lib/firmware/xilinx/mcoder/mcoder.bin -n 2000'
