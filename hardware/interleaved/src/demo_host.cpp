@@ -18,9 +18,11 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <numeric>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -123,8 +125,25 @@ int main(int argc, char** argv) {
     const int iters = int_arg(args, "-n", 2000);
     const int n     = std::min(int_arg(args, "-N", 4095), kMaxIn);
 
+    // Payload: synthetic 'a'+(i%7) by default, or the first n bytes of a real
+    // file with -f.  The synthetic pattern is a seven-symbol periodic sequence
+    // and is the most compressible input in this project's test set, so it
+    // flatters both the ratio AND the throughput -- fewer output bits means
+    // less packer work per coded bin.  -f is what makes this host comparable
+    // with replication_full's and mcoder's demo hosts, which read a real image.
+    const std::string file{arg_of(args, "-f", "")};
     std::vector<byte> input(n);
-    for (int i = 0; i < n; ++i) input[i] = static_cast<byte>('a' + (i % 7));
+    if (!file.empty()) {
+        std::ifstream f(file, std::ios::binary);
+        if (!f) { std::cerr << "cannot open " << file << "\n"; return 2; }
+        f.read(reinterpret_cast<char*>(input.data()), n);
+        if (f.gcount() != n) {
+            std::cerr << file << ": need " << n << " bytes, got " << f.gcount() << "\n";
+            return 2;
+        }
+    } else {
+        for (int i = 0; i < n; ++i) input[i] = static_cast<byte>('a' + (i % 7));
+    }
 
     // ---------- SOFTWARE reference (ARM): efficient single-stream coder ----------
     std::array<byte, kMaxOut> sw_out{};
@@ -208,7 +227,8 @@ int main(int argc, char** argv) {
     oh.hw_compute = hw;   // the kernel-only mean, so boundary 1 == the table below
 
     std::cout << "============ SW reference (ARM) vs HW (FPGA interleaved) ============\n"
-              << "input                  : " << n << " symbols (compressible pattern)\n"
+              << "input                  : " << n << " symbols ("
+              << (file.empty() ? "synthetic 'a'+(i%7)" : file) << ")\n"
               << "SW compressed          : " << sw_len << " B (" << (100.0 * sw_len / n) << "%)  single-stream\n"
               << "HW compressed          : " << hw_len << " B (" << (100.0 * hw_len / n) << "%)  16 chunks\n"
               << "SW lossless            : " << (sw_ok ? "YES" : "NO") << "\n"
