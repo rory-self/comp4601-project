@@ -24,7 +24,7 @@ void FrequencyTable::normalize() {
 
     const std::size_t old_total = _total;
     std::array<uint32_t, num_unique_bytes> scaled{};
-    
+
     std::size_t new_total = 0;
     for (std::size_t i = 0; i < num_unique_bytes; ++i) {
         if (_freq.at(i) == 0) {
@@ -32,7 +32,7 @@ void FrequencyTable::normalize() {
             continue;
         }
 
-        std::size_t v = static_cast<uint64_t>((_freq.at(i)) * max_total_freq) / old_total;
+        std::size_t v = static_cast<uint64_t>(_freq.at(i)) * max_total_freq / old_total;
         if (v < 1) {
             v = 1;
         }
@@ -61,11 +61,15 @@ void FrequencyTable::normalize() {
     rebuild_cumulative_frequencies();
 }
 
-auto FrequencyTable::build(const std::vector<uint8_t> &input) -> FrequencyTable {
+auto FrequencyTable::build(const std::vector<uint8_t>& input) -> FrequencyTable {
+    return build(input.data(), input.size());
+}
+
+auto FrequencyTable::build(const uint8_t* data, const std::size_t len) -> FrequencyTable {
     FrequencyTable table;
 
-    for (uint8_t byte : input) {
-        table._freq.at(byte)++;
+    for (std::size_t i = 0; i < len; ++i) {
+        table._freq.at(data[i])++;
     }
 
     table.rebuild_cumulative_frequencies();
@@ -104,7 +108,7 @@ auto FrequencyTable::deserialize(const std::vector<uint8_t>& data, std::size_t& 
         uint32_t value = static_cast<uint32_t>(data.at(offset));
         for (std::size_t j = 1; j < 4; ++j) {
             const std::size_t local_offset = 8 * j;
-            value |= static_cast<uint32_t>(data.at(offset + j) << local_offset);
+            value |= static_cast<uint32_t>(data.at(offset + j)) << local_offset;
         }
 
         table._freq.at(i) = value;
@@ -127,9 +131,8 @@ auto FrequencyTable::get_symbol_for_cumulative(uint32_t scaled_value) const -> L
     }
 
     return {
-        .symbol = static_cast<uint8_t>(low), 
+        .symbol = static_cast<uint8_t>(low),
         .cum_low = _cum_freq.at(low),
         .cum_high = _cum_freq.at(low + 1)
     };
 }
-

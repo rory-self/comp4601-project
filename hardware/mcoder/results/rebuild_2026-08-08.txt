@@ -1,0 +1,67 @@
+M-coder — rebuilt and re-measured 2026-08-08
+=============================================================================
+Why: the bitstream behind the original onfabric_result.txt was never committed,
+so the presentation's headline number could not be reproduced by anyone reading
+the repo. Re-linked from the committed bin/arith_kernel.xo and re-measured.
+
+BUILD
+  cd hardware/mcoder/synth
+  source ../../../env.sh
+  v++ --link --target hw --platform "$PLATFORM" --config link.cfg \
+      -o ../bin/arith.xclbin ../bin/arith_kernel.xo
+  cp ../bin/arith.xclbin ../bin/arith.bin      # Kria firmware slot wants .bin
+
+  Post-route timing (impl_1, 5.000 ns period):
+    WNS +0.636 ns   TNS 0.000   0 failing endpoints of 71515
+    WHS +0.011 ns   WPWS +1.000 ns   0 pulse-width violations
+  (the original build recorded WNS +0.754 ns over 71960 endpoints -- same design,
+   different placement seed)
+
+A: KERNEL-ONLY  (chrono around enqueue+wait; no host<->device transfer)
+   bin/bench_host_arm -x <bitstream> -N 4095 -n 2000
+   workload: synthetic 'a'+(i%7), 4095 symbols
+
+     input 4095 symbols -> 1687 bytes (41.1966%)
+     PASS: board output is lossless (decode == input)
+     mean 123.825 us/call   median 124.682   min/max 118.001 / 153.922
+     30.2381 ns/sym  =>  33.0709 M symbols/s
+     implied 6.048 cyc/byte at 200 MHz  (cosim predicted 6.67)
+
+   The 1687-byte output is byte-identical to the original build's record, so this
+   is the same kernel. Throughput 33.07 vs the original 31.12 M sym/s (+6%).
+
+B: IMAGE DEMO  (timing INCLUDES host<->device transfer -- different boundary)
+   bin/demo_arm -i data/image.pgm -x <bitstream>
+   256x256 = 65536 bytes, 16 blocks of <=4096, K=8
+
+     original size      : 65536 bytes
+     compressed size    : 40406 bytes  (61.6547% of original, 1.62194x)
+     lossless           : YES (pixel-perfect)
+     CPU vs FPGA output : IDENTICAL bytes
+     ARM CPU  compress  : 28926.3 us  (2.26562 M symbols/s)
+     FPGA     compress  : 2945.91 us  (22.2465 M symbols/s)
+     SPEEDUP (FPGA/CPU) : 9.81917x
+
+=============================================================================
+THIS RESOLVES TWO OPEN QUESTIONS ABOUT THE PRESENTATION
+=============================================================================
+
+1. "65 KB -> 40 KB, ~39% reduction" (slides 2 and 10) is measurement B above:
+   65536 -> 40406 B = 38.3% reduction. It is an M-CODER figure, not a
+   replication_full figure. replication_full on the same image gives 42661 B.
+
+2. The slide-8 chart's M-coder bar of 21.16 M sym/s is also measurement B
+   (22.25 M sym/s here; 21.16 on the slightly slower original build -- the ratio
+   21.16/22.25 tracks the 31.12/33.07 kernel-only ratio).
+
+   But the other three bars are measurement A. So the chart mixes timing
+   boundaries: three kernel-only figures against one that includes host<->device
+   transfer. Measured consistently, the M-coder bar is 33.07 M sym/s, and the
+   speedup over the 3.47 M sym/s ARM baseline is 9.5x, not 6.09x.
+
+   The 6.09x is doubly mixed: an image-demo numerator (21.16) over a kernel-only
+   denominator (3.470). Using the image demo on both sides gives 9.82x
+   (2.26562 -> 22.2465), which is what demo_arm itself prints.
+
+   The slide UNDERSTATES the M-coder. Either boundary is defensible; mixing them
+   is not.

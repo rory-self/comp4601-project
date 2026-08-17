@@ -1,0 +1,63 @@
+Interleaved (LANES=16, GROUPS=4) — C-synthesis re-run 2026-08-08
+=============================================================================
+Why: our notes quoted both 273.97 MHz and 293 MHz as "the" Fmax of this design.
+Re-synthesised both committed configs to settle it. They are DIFFERENT TOPS, and
+both numbers were real.
+
+Vitis HLS 2025.2, part xck26-sfvc784-2LV-c.
+
+--- A. synth/hls.cfg : the coder alone -------------------------------------
+    syn.top = arith_encode_interleaved,  clock = 4.00 ns
+
+    INFO: [HLS 200-789] **** Estimated Fmax: 342.47 MHz
+
+    +--------+---------+----------+------------+
+    |  Clock |  Target | Estimated| Uncertainty|
+    +--------+---------+----------+------------+
+    |ap_clk  |  4.00 ns|  2.920 ns|     1.08 ns|
+    +--------+---------+----------+------------+
+
+    BRAM_18K 50 (17%)   DSP 6 (~0%)   FF 9,706 (4%)   LUT 22,523 (19%)
+
+    reproduce:
+      cd hardware/interleaved/synth && source ../../../env.sh
+      v++ -c --mode hls --config hls.cfg --work_dir work
+
+--- B. synth/board.cfg : the board top (coder + AXI wrapper) ----------------
+    syn.top = arith_kernel,  clock = 5.00 ns,  -DBOARD_WRAP
+
+    INFO: [HLS 200-789] **** Estimated Fmax: 273.97 MHz
+
+    +--------+---------+----------+------------+
+    |  Clock |  Target | Estimated| Uncertainty|
+    +--------+---------+----------+------------+
+    |ap_clk  |  5.00 ns|  3.650 ns|     1.35 ns|
+    +--------+---------+----------+------------+
+
+    BRAM_18K 50 (17%)   DSP 6 (~0%)   FF 9,135 (3%)   LUT 23,249 (19%)
+
+    reproduce:
+      v++ -c --mode hls --config board.cfg --work_dir work_board
+
+=============================================================================
+CITE 273.97 MHz. The board top is what gets linked into the bitstream; the
+standalone coder is a block that is never built on its own.
+
+The 293 MHz in older notes was the standalone number from an earlier revision of
+the source. That same top synthesises at 342.47 MHz today.
+
+TWO OBSERVATIONS WORTH REPORTING
+ 1. The AXI wrapper costs ~20% of the clock (342.47 -> 273.97 MHz). The critical
+    path in the BUILT design is the memory interface, not the coder.
+ 2. replication_full reports the SAME 273.97 MHz, also at a 3.650 ns estimated
+    path (see ../../replication_full/REPRODUCIBILITY.md step 2). Two structurally
+    different coders landing on an identical critical path is strong evidence
+    that neither coder is the limiter -- the shared AXI infrastructure is.
+
+CAUTION ON FMAX-SCALED THROUGHPUT
+The "31 M/s predicted" figure quoted elsewhere is the cosim cycle count scaled to
+Fmax: 20.679 M/s x (Fmax / 200). That gives 28.3, 30.3 or 35.4 M/s depending on
+which Fmax is used. Only two numbers here are directly measured:
+  20.679 M/s  cosim, kernel-only, at 200 MHz
+  11.667 M/s  real fabric
+Cite those. Label anything Fmax-scaled as a projection.

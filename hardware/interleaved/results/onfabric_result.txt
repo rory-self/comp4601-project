@@ -22,8 +22,11 @@ RESULT: on real fabric at 200 MHz, the K=8 replication is ~12% FASTER than the
 time-interleaved g4 — the reverse of the C/RTL co-simulation ranking (which had
 g4 at 20.7 M/s kernel-only). Two reasons the cosim advantage did not translate:
 
-  1) CLOCK CAP. The interleaved g4's edge assumed ~293 MHz (its HLS Fmax). This
-     platform only offers fixed 100/200/400 MHz clocks, so it runs at 200 MHz,
+  1) CLOCK CAP. The interleaved g4's edge assumed it could run above 200 MHz (its
+     HLS Fmax; the board top re-synthesises at 273.97 MHz -- see synth_2026-08-08.txt,
+     which explains why 273.97 and 293 both appear in older notes: they are the
+     board top and the standalone coder respectively).
+     This platform only offers fixed 100/200/400 MHz clocks, so it runs at 200 MHz,
      throwing away the headroom that made it win in the first place.
 
   2) REAL DDR vs idealised cosim AXI. The interleaved kernel's m_axi I/O does not
@@ -35,7 +38,11 @@ g4 at 20.7 M/s kernel-only). Two reasons the cosim advantage did not translate:
 TAKEAWAYS for the report:
   - Iteration-2 architecture is VALIDATED CORRECT on hardware (lossless, exact
     compressed size), and reaches aggregate II=1 with the full 255-context model.
-  - Its 31 M/s figure is a genuine *HLS* result (293 MHz, cycle-accurate cosim),
+  - Its 31 M/s figure is NOT directly measured: it is the cosim cycle count scaled
+    to the standalone coder's Fmax (20.679 M/s at 200 MHz x 293/200, using the
+    then-current 293 MHz estimate). Directly measured are 20.679 M/s (cosim,
+    kernel-only, 200 MHz) and 11.667 M/s (fabric). Cite those; label anything
+    Fmax-scaled as a projection,
     but realising it on fabric needs BOTH a ~300 MHz platform clock AND bursted
     I/O (wide/coalesced m_axi + dataflow). Neither is available on the stock
     kv260_custom platform, so K=8 replication remains the best *fabric* design here.
