@@ -29,6 +29,7 @@ private:
 
 public:
     [[nodiscard]] static auto build(const std::vector<uint8_t>& input) -> FrequencyTable;
+    [[nodiscard]] static auto build(const uint8_t* data, std::size_t len) -> FrequencyTable;
     [[nodiscard]] static auto deserialize(const std::vector<uint8_t>& data, std::size_t& offset) -> FrequencyTable;
 
     [[nodiscard]] auto get_symbol_range(uint8_t byte) const -> SymbolRange;
